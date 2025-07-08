@@ -1,0 +1,18 @@
+name = "AI Search UI"
+type = "theme"
+
+[blocks]
+  [blocks.search_bar]
+  name = "AI Search Bar"
+  type = "@app"
+  target = "section"
+  javascript = "main.js"
+  stylesheet = "main.css"
+
+  [blocks.search_bar.settings]
+  # Add settings here if needed, for example:
+  # [[blocks.search_bar.settings.input]]
+  # type = "text"
+  # id = "placeholder_text"
+  # label = "Search bar placeholder"
+  # default = "Search for products..." 

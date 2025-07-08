@@ -1,0 +1,16 @@
+{
+  "name": "ai-search-ui-ext",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "esbuild ./src/index.jsx --bundle --outfile=../assets/main.js --loader:.js=jsx --jsx-factory=React.createElement --jsx-fragment=React.Fragment",
+    "dev": "npm run build -- --watch"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+} 
