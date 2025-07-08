@@ -78,11 +78,10 @@ export async function searchProducts(request: SearchRequest): Promise<SearchResu
     const searchId = await logSearchQuery(request, parsedQuery, candidates.length);
     
     const processingTime = Date.now() - startTime;
-    console.log(`SEARCH_COMPLETE: Success, processed in ${processingTime}ms`);
     
     return {
       products: paginatedResults,
-      total_count: candidates.length,
+      total_count: rankingResult.ranked_products.length,
       query_info: {
         original_query: request.query,
         parsed_query: parsedQuery,
@@ -96,10 +95,10 @@ export async function searchProducts(request: SearchRequest): Promise<SearchResu
     };
     
   } catch (error) {
-    console.error('SEARCH_PIPELINE_ERROR:', error);
+    console.error("SEARCH_PIPELINE_ERROR:", error);
     
-    // Fallback to basic keyword search
-    console.log('SEARCH_FALLBACK: Falling back to keyword search');
+    // Fallback to keyword search
+    console.log("SEARCH_FALLBACK: Falling back to keyword search");
     const fallbackResults = await performKeywordSearch(
       request.shop_domain,
       request.query,
@@ -107,12 +106,7 @@ export async function searchProducts(request: SearchRequest): Promise<SearchResu
       offset
     );
     
-    const searchId = await logSearchQuery(request, {
-      query_text: request.query,
-      filters: {},
-      intent: 'product_search',
-      confidence: 0.3,
-    }, fallbackResults.length);
+    const processingTime = Date.now() - startTime;
     
     return {
       products: fallbackResults,
@@ -123,20 +117,17 @@ export async function searchProducts(request: SearchRequest): Promise<SearchResu
           query_text: request.query,
           filters: {},
           intent: 'product_search',
-          confidence: 0.3,
+          confidence: 0.3
         },
-        processing_time_ms: Date.now() - startTime,
+        processing_time_ms: processingTime,
       },
-      ranking_info: {
-        model_used: 'fallback',
-      },
-      search_id: searchId,
+      search_id: 'fallback-' + Date.now(),
     };
   }
 }
 
 /**
- * Perform vector similarity search in Supabase
+ * Perform vector similarity search using pgvector
  */
 async function performVectorSearch(
   shopDomain: string,
@@ -144,70 +135,97 @@ async function performVectorSearch(
   filters: Record<string, any>,
   limit: number
 ): Promise<ProductCandidate[]> {
-  let query = supabase
-    .from('products')
-    .select(`
-      id,
-      shopify_product_id,
-      title,
-      description,
-      price_min,
-      price_max,
-      vendor,
-      product_type,
-      tags,
-      available,
-      image_url,
-      embedding
-    `)
-    .eq('shop_domain', shopDomain)
-    .eq('available', true); // Only search available products by default
-  
-  // Apply filters
-  if (filters.price_min) {
-    query = query.gte('price_min', filters.price_min);
-  }
-  
-  if (filters.price_max) {
-    query = query.lte('price_max', filters.price_max);
-  }
-  
-  if (filters.product_type) {
-    query = query.ilike('product_type', `%${filters.product_type}%`);
-  }
-  
-  if (filters.vendor) {
-    query = query.ilike('vendor', `%${filters.vendor}%`);
-  }
-  
-  if (filters.tags && filters.tags.length > 0) {
-    query = query.overlaps('tags', filters.tags);
-  }
-  
-  // Perform vector similarity search
-  const { data, error } = await query
-    .order('embedding <-> ' + JSON.stringify(queryEmbedding), { ascending: true })
-    .limit(limit);
-  
-  if (error) {
+  try {
+    // Build the base query with proper pgvector syntax
+    let query = supabase
+      .from('products')
+      .select(`
+        id,
+        shopify_product_id,
+        title,
+        description,
+        vendor,
+        product_type,
+        price_min,
+        price_max,
+        available,
+        tags,
+        image_url,
+        handle
+      `)
+      .eq('shop_domain', shopDomain);
+    
+    // Apply filters if provided
+    if (filters.price_max) {
+      query = query.lte('price_min', filters.price_max);
+    }
+    
+    if (filters.color) {
+      query = query.ilike('title', `%${filters.color}%`);
+    }
+    
+    if (filters.product_type) {
+      query = query.ilike('product_type', `%${filters.product_type}%`);
+    }
+    
+    if (filters.tags && Array.isArray(filters.tags)) {
+      // Use containedBy for array overlap
+      query = query.overlaps('tags', filters.tags);
+    }
+    
+    // Execute the query first to get filtered products
+    const { data: products, error: filterError } = await query;
+    
+    if (filterError || !products || products.length === 0) {
+      console.error('Filter query error:', filterError);
+      return [];
+    }
+    
+    // Now perform vector similarity search using RPC function
+    // Use the numeric Shopify product IDs for the RPC call to avoid UUID ↔︎ integer mismatch
+    const shopifyProductIds = products
+      .map(p => p.shopify_product_id)
+      .filter((id: number | null | undefined) => id !== null && id !== undefined);
+
+    const { data, error } = await supabase
+      .rpc('search_products_by_embedding', {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.5,
+        match_count: limit,
+        shop_domain_filter: shopDomain,
+        product_ids: shopifyProductIds
+      });
+    
+    if (error) {
+      console.error('Vector search error:', error);
+      // If RPC fails, use the filtered products without similarity scores
+      return products.map(product => ({
+        ...product,
+        similarity_score: 0.7 // Default score
+      }));
+    }
+    
+    // Map the results to ProductCandidate format
+    return (data || []).map((product: any) => ({
+      id: product.id,
+      shopify_product_id: product.shopify_product_id,
+      title: product.title,
+      description: product.description,
+      price_min: product.price_min,
+      price_max: product.price_max,
+      vendor: product.vendor,
+      product_type: product.product_type,
+      tags: product.tags,
+      available: product.available,
+      image_url: product.image_url,
+      handle: product.handle,
+      similarity_score: product.similarity || 0.5,
+    }));
+    
+  } catch (error) {
     console.error('Vector search error:', error);
     throw error;
   }
-  
-  // Calculate similarity scores and transform to ProductCandidate format
-  return (data || []).map(product => ({
-    id: product.id,
-    shopify_product_id: product.shopify_product_id,
-    title: product.title,
-    description: product.description,
-    price_min: product.price_min,
-    price_max: product.price_max,
-    vendor: product.vendor,
-    product_type: product.product_type,
-    tags: product.tags,
-    available: product.available,
-    similarity_score: 0.85, // Placeholder - Supabase doesn't return actual similarity scores easily
-  }));
 }
 
 /**
@@ -221,22 +239,9 @@ async function performKeywordSearch(
 ): Promise<ProductCandidate[]> {
   const { data, error } = await supabase
     .from('products')
-    .select(`
-      id,
-      shopify_product_id,
-      title,
-      description,
-      price_min,
-      price_max,
-      vendor,
-      product_type,
-      tags,
-      available,
-      image_url
-    `)
+    .select('*')
     .eq('shop_domain', shopDomain)
-    .eq('available', true)
-    .or(`title.ilike.%${query}%,description.ilike.%${query}%,tags.cs.{${query}}`)
+    .or(`title.ilike.%${query}%,description.ilike.%${query}%,vendor.ilike.%${query}%,tags.cs.{${query}}`)
     .range(offset, offset + limit - 1);
   
   if (error) {
@@ -255,6 +260,8 @@ async function performKeywordSearch(
     product_type: product.product_type,
     tags: product.tags,
     available: product.available,
+    image_url: product.image_url,
+    handle: product.handle,
     similarity_score: 0.5, // Lower score for keyword search
   }));
 }
@@ -299,104 +306,36 @@ async function logSearchQuery(
  */
 export async function trackProductClick(
   searchId: string,
-  productId: number
+  productId: number, // Expect shopify_product_id
 ): Promise<void> {
   try {
     // Get current clicked products
-    const { data: searchQuery } = await supabase
+    const { data: searchQuery, error: fetchError } = await supabase
       .from('search_queries')
       .select('clicked_product_ids')
       .eq('id', searchId)
       .single();
+      
+    if (fetchError) {
+      console.error('Failed to fetch search query for tracking:', fetchError);
+      return;
+    }
     
     if (searchQuery) {
       const currentClicks = searchQuery.clicked_product_ids || [];
-      const updatedClicks = [...new Set([...currentClicks, productId])];
+      // Ensure IDs are integers
+      const updatedClicks = [...new Set([...currentClicks, productId])].map(id => parseInt(id, 10));
       
-      await supabase
+      const { error: updateError } = await supabase
         .from('search_queries')
-        .update({ clicked_product_ids: updatedClicks })
+        .update({ clicked_product_ids: updatedClicks, updated_at: new Date().toISOString() })
         .eq('id', searchId);
+        
+      if (updateError) {
+        console.error('Failed to track product click:', updateError);
+      }
     }
   } catch (error) {
     console.error('Failed to track product click:', error);
   }
 }
-
-/**
- * Get search analytics for a shop
- */
-export async function getSearchAnalytics(
-  shopDomain: string,
-  days: number = 30
-): Promise<{
-  total_searches: number;
-  average_results: number;
-  top_queries: Array<{ query: string; count: number; avg_results: number }>;
-  click_through_rate: number;
-}> {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  
-  try {
-    // Get search statistics
-    const { data: searches, error } = await supabase
-      .from('search_queries')
-      .select('query_text, results_count, clicked_product_ids')
-      .eq('shop_domain', shopDomain)
-      .gte('created_at', since.toISOString());
-    
-    if (error || !searches) {
-      return {
-        total_searches: 0,
-        average_results: 0,
-        top_queries: [],
-        click_through_rate: 0,
-      };
-    }
-    
-    const totalSearches = searches.length;
-    const totalResults = searches.reduce((sum, s) => sum + (s.results_count || 0), 0);
-    const averageResults = totalSearches > 0 ? totalResults / totalSearches : 0;
-    
-    // Calculate click-through rate
-    const searchesWithClicks = searches.filter(s => s.clicked_product_ids && s.clicked_product_ids.length > 0);
-    const clickThroughRate = totalSearches > 0 ? searchesWithClicks.length / totalSearches : 0;
-    
-    // Group queries and count
-    const queryMap = new Map<string, { count: number; totalResults: number }>();
-    searches.forEach(search => {
-      const query = search.query_text.toLowerCase();
-      const existing = queryMap.get(query) || { count: 0, totalResults: 0 };
-      queryMap.set(query, {
-        count: existing.count + 1,
-        totalResults: existing.totalResults + (search.results_count || 0),
-      });
-    });
-    
-    // Get top queries
-    const topQueries = Array.from(queryMap.entries())
-      .map(([query, stats]) => ({
-        query,
-        count: stats.count,
-        avg_results: stats.count > 0 ? stats.totalResults / stats.count : 0,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-    
-    return {
-      total_searches: totalSearches,
-      average_results: averageResults,
-      top_queries: topQueries,
-      click_through_rate: clickThroughRate,
-    };
-  } catch (error) {
-    console.error('Failed to get search analytics:', error);
-    return {
-      total_searches: 0,
-      average_results: 0,
-      top_queries: [],
-      click_through_rate: 0,
-    };
-  }
-} 

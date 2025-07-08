@@ -27,13 +27,10 @@ import { searchProducts, type SearchResult, type ProductCandidate } from "../lib
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   
-  return {
+  return json({
     shop: session.shop,
-    // Use the origin of the incoming request so that the client always makes
-    // requests back to the same domain the app is served from. This works both
-    // in development (Shopify CLI tunnel / localhost) and production.
     apiUrl: new URL(request.url).origin,
-  };
+  });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -41,37 +38,47 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop } = session;
 
   const formData = await request.formData();
-  const query = formData.get("query") as string;
+  const action = formData.get("action") as string;
   
-  if (!query) {
-    return json({ success: false, error: "Missing query" }, { status: 400 });
-  }
-
-  try {
-    const searchResult = await searchProducts({
-      query,
-      shop_domain: shop,
-      limit: 20,
-      offset: 0,
-    });
+  if (action === "search") {
+    const query = formData.get("query") as string;
     
-    return json({
-      success: true,
-      data: searchResult,
-    });
+    if (!query) {
+      return json({ success: false, error: "Missing query" }, { status: 400 });
+    }
 
-  } catch (error) {
-    console.error("Admin search error:", error);
-    return json({
-      success: false,
-      error: "Search failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    }, { status: 500 });
+    try {
+      console.log("Admin search initiated for query:", query);
+      
+      const searchResult = await searchProducts({
+        query,
+        shop_domain: shop,
+        limit: 20,
+        offset: 0,
+      });
+      
+      console.log("Admin search completed, found", searchResult.products.length, "products");
+      
+      return json({
+        success: true,
+        data: searchResult,
+      });
+
+    } catch (error) {
+      console.error("Admin search error:", error);
+      return json({
+        success: false,
+        error: "Search failed",
+        message: error instanceof Error ? error.message : "Unknown error",
+      }, { status: 500 });
+    }
   }
+  
+  return json({ success: false, error: "Invalid action" }, { status: 400 });
 };
 
 export default function Index() {
-  const { shop } = useLoaderData<typeof loader>();
+  const { shop, apiUrl } = useLoaderData<typeof loader>();
   const searchFetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
 
@@ -80,9 +87,11 @@ export default function Index() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [indexingStats, setIndexingStats] = useState<any>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<number | null>(null);
 
   const isSearching = searchFetcher.state !== 'idle';
   const searchResults = (searchFetcher.data?.success && searchFetcher.data.data.products) || [];
+  const searchInfo = searchFetcher.data?.success ? searchFetcher.data.data.query_info : null;
 
   // Load initial data
   useEffect(() => {
@@ -93,7 +102,8 @@ export default function Index() {
   useEffect(() => {
     if (searchFetcher.state === 'idle' && searchFetcher.data) {
       if (searchFetcher.data.success) {
-        shopify.toast.show(`Found ${searchFetcher.data.data.products.length} products in ${searchFetcher.data.data.query_info.processing_time_ms}ms`);
+        const message = `Found ${searchFetcher.data.data.products.length} products in ${searchFetcher.data.data.query_info.processing_time_ms}ms`;
+        shopify.toast.show(message);
       } else {
         shopify.toast.show(searchFetcher.data.error || "Search failed", { isError: true });
       }
@@ -103,7 +113,7 @@ export default function Index() {
   // Load analytics data
   const loadAnalytics = async () => {
     try {
-      const response = await fetch(`/api/analytics?type=overview`);
+      const response = await fetch(`${apiUrl}/api/analytics?type=overview`);
       const data = await response.json();
       if (data.success) {
         setAnalytics(data.data.search);
@@ -116,31 +126,49 @@ export default function Index() {
 
   // Handle search
   const handleSearch = () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim()) {
+      shopify.toast.show("Please enter a search query", { isError: true });
+      return;
+    }
+    
+    console.log("Initiating search for:", searchQuery);
+    
     const formData = new FormData();
+    formData.append("action", "search");
     formData.append("query", searchQuery);
     searchFetcher.submit(formData, { method: "post" });
   };
 
+  // Handle Enter key in search field
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
   // Handle product sync
   const handleSync = async () => {
-    console.log("SYNC_BUTTON_CLICKED: Attempting to start product sync.");
+    console.log("Starting product sync...");
     setShowSyncModal(false);
+    setSyncProgress(0);
+    
     try {
-      // Use a relative URL which is more reliable than a constructed one.
-      const response = await fetch(`/api/index?action=sync`);
+      const response = await fetch(`${apiUrl}/api/index?action=sync`);
       const data = await response.json();
       
       if (data.success) {
         shopify.toast.show(`Synced ${data.data.products_processed} products successfully`);
+        setSyncProgress(100);
         loadAnalytics(); // Refresh all stats
       } else {
-        console.error("SYNC_API_ERROR_RESPONSE:", data.error, data.message);
+        console.error("Sync failed:", data.error, data.message);
         shopify.toast.show(data.error || "Sync failed", { isError: true });
       }
     } catch (error) {
-      console.error('SYNC_FETCH_FAILED:', error);
-      shopify.toast.show("Sync failed due to a network or server error.", { isError: true });
+      console.error('Sync error:', error);
+      shopify.toast.show("Sync failed due to a network error", { isError: true });
+    } finally {
+      setSyncProgress(null);
     }
   };
 
@@ -154,7 +182,7 @@ export default function Index() {
 
   const productTypeRows = indexingStats?.products_by_type?.slice(0, 5).map((type: any, index: number) => [
     index + 1,
-    type.type,
+    type.type || 'Uncategorized',
     type.count,
     Math.round((type.count / (indexingStats?.total_products || 1)) * 100) + '%',
   ]) || [];
@@ -165,7 +193,7 @@ export default function Index() {
     product.vendor || 'N/A',
     product.price_min ? `$${product.price_min}` : 'N/A',
     product.available ? <Badge tone="success">Available</Badge> : <Badge tone="critical">Unavailable</Badge>,
-    Math.round(product.similarity_score * 100) + '%',
+    product.similarity_score ? Math.round(product.similarity_score * 100) + '%' : 'N/A',
   ]);
 
   return (
@@ -202,19 +230,29 @@ export default function Index() {
                       label="Search Query"
                       value={searchQuery}
                       onChange={setSearchQuery}
+                      onKeyPress={handleKeyPress}
                       placeholder="Enter your search query..."
                       autoComplete="off"
+                      disabled={isSearching}
                     />
                   </Box>
                   <Button 
                     variant="primary" 
                     onClick={handleSearch} 
                     loading={isSearching}
-                    disabled={!searchQuery.trim()}
+                    disabled={!searchQuery.trim() || isSearching}
                   >
                     Search
                   </Button>
                 </InlineStack>
+                
+                {searchInfo && (
+                  <Box>
+                    <Text variant="bodySm" tone="subdued">
+                      Processed as: "{searchInfo.parsed_query.query_text}"
+                    </Text>
+                  </Box>
+                )}
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -244,13 +282,22 @@ export default function Index() {
                   </Box>
                   <Box>
                     <Text variant="headingLg" as="h3">
-                      {analytics ? Math.round(analytics.click_through_rate * 100) : 0}%
+                      {analytics?.avg_response_time ? `${Math.round(analytics.avg_response_time)}ms` : 'N/A'}
                     </Text>
                     <Text variant="bodyMd" tone="subdued" as="p">
-                      Click Rate
+                      Avg Response Time
                     </Text>
                   </Box>
                 </InlineStack>
+                
+                {syncProgress !== null && (
+                  <Box>
+                    <ProgressBar progress={syncProgress} />
+                    <Text variant="bodySm" tone="subdued">
+                      Syncing products... {syncProgress}%
+                    </Text>
+                  </Box>
+                )}
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -261,13 +308,12 @@ export default function Index() {
           <Card>
             <BlockStack gap="400">
               <Text as="h2" variant="headingMd">
-                🎯 Search Results ({searchResults.length})
+                🔎 Search Results
               </Text>
               <DataTable
                 columnContentTypes={['text', 'text', 'text', 'text', 'text', 'text']}
                 headings={['#', 'Product', 'Vendor', 'Price', 'Status', 'Relevance']}
                 rows={searchResultRows}
-                truncate
               />
             </BlockStack>
           </Card>
@@ -279,18 +325,17 @@ export default function Index() {
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
-                  🔍 Top Search Queries
+                  🔥 Top Search Queries
                 </Text>
                 {topQueriesRows.length > 0 ? (
                   <DataTable
-                    columnContentTypes={['text', 'text', 'numeric', 'numeric']}
-                    headings={['#', 'Query', 'Searches', 'Avg Results']}
+                    columnContentTypes={['numeric', 'text', 'numeric', 'numeric']}
+                    headings={['#', 'Query', 'Count', 'Avg Results']}
                     rows={topQueriesRows}
-                    truncate
                   />
                 ) : (
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    No search data available yet
+                  <Text variant="bodyMd" tone="subdued">
+                    No search queries yet. Try searching above!
                   </Text>
                 )}
               </BlockStack>
@@ -301,18 +346,17 @@ export default function Index() {
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
-                  📦 Product Categories
+                  📦 Products by Type
                 </Text>
                 {productTypeRows.length > 0 ? (
                   <DataTable
-                    columnContentTypes={['text', 'text', 'numeric', 'text']}
-                    headings={['#', 'Category', 'Count', 'Percentage']}
+                    columnContentTypes={['numeric', 'text', 'numeric', 'text']}
+                    headings={['#', 'Type', 'Count', 'Percentage']}
                     rows={productTypeRows}
-                    truncate
                   />
                 ) : (
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    No product data available
+                  <Text variant="bodyMd" tone="subdued">
+                    No products indexed yet. Click "Sync Products" to get started!
                   </Text>
                 )}
               </BlockStack>
@@ -320,127 +364,36 @@ export default function Index() {
           </Layout.Section>
         </Layout>
 
-        {/* Indexing Status */}
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack gap="400" align="space-between">
-              <Text as="h2" variant="headingMd">
-                🔄 Indexing Status
-              </Text>
-              <Button onClick={loadAnalytics}>
-                Refresh
-              </Button>
-            </InlineStack>
-            
-            <Layout>
-              <Layout.Section variant="oneThird">
-                <Box padding="400" background="bg-surface-secondary" borderRadius="200">
-                  <BlockStack gap="200">
-                    <Text variant="bodyMd" tone="subdued" as="p">Total Products</Text>
-                    <Text variant="headingLg" as="h3">
-                      {indexingStats?.total_products || 0}
-                    </Text>
-                  </BlockStack>
-                </Box>
-              </Layout.Section>
-              
-              <Layout.Section variant="oneThird">
-                <Box padding="400" background="bg-surface-secondary" borderRadius="200">
-                  <BlockStack gap="200">
-                    <Text variant="bodyMd" tone="subdued" as="p">Available Products</Text>
-                    <Text variant="headingLg" as="h3">
-                      {indexingStats?.available_products || 0}
-                    </Text>
-                  </BlockStack>
-                </Box>
-              </Layout.Section>
-              
-              <Layout.Section variant="oneThird">
-                <Box padding="400" background="bg-surface-secondary" borderRadius="200">
-                  <BlockStack gap="200">
-                    <Text variant="bodyMd" tone="subdued" as="p">Last Indexed</Text>
-                    <Text variant="bodyMd" as="p">
-                      {indexingStats?.last_indexed 
-                        ? new Date(indexingStats.last_indexed).toLocaleString()
-                        : 'Never'
-                      }
-                    </Text>
-                  </BlockStack>
-                </Box>
-              </Layout.Section>
-            </Layout>
-          </BlockStack>
-        </Card>
-
-        {/* How It Works */}
-        <Card>
-          <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">
-              🧠 How AI Search Works
-            </Text>
-            <Layout>
-              <Layout.Section variant="oneThird">
-                <BlockStack gap="200">
-                  <Text variant="headingMd" as="h3">1. Query Understanding</Text>
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    AI analyzes natural language queries to understand intent, extract filters, 
-                    and refine search terms for better matching.
-                  </Text>
-                </BlockStack>
-              </Layout.Section>
-              
-              <Layout.Section variant="oneThird">
-                <BlockStack gap="200">
-                  <Text variant="headingMd" as="h3">2. Semantic Search</Text>
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    Vector embeddings find products by meaning, not just keywords. 
-                    "Cozy reading chair" matches products even without those exact words.
-                  </Text>
-                </BlockStack>
-              </Layout.Section>
-              
-              <Layout.Section variant="oneThird">
-                <BlockStack gap="200">
-                  <Text variant="headingMd" as="h3">3. AI Ranking</Text>
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    AI re-ranks results considering relevance, availability, and user intent 
-                    to show the most appropriate products first.
-                  </Text>
-                </BlockStack>
-              </Layout.Section>
-            </Layout>
-          </BlockStack>
-        </Card>
+        {/* Sync Modal */}
+        <Modal
+          open={showSyncModal}
+          onClose={() => setShowSyncModal(false)}
+          title="Sync Products"
+          primaryAction={{
+            content: 'Start Sync',
+            onAction: handleSync,
+          }}
+          secondaryActions={[
+            {
+              content: 'Cancel',
+              onAction: () => setShowSyncModal(false),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <TextContainer>
+              <p>
+                This will sync all products from your store to the AI search index. 
+                The process may take a few minutes depending on your catalog size.
+              </p>
+              <p>
+                <strong>Note:</strong> Products are automatically synced when created, updated, or deleted. 
+                Use this manual sync only if needed.
+              </p>
+            </TextContainer>
+          </Modal.Section>
+        </Modal>
       </BlockStack>
-
-      {/* Sync Modal */}
-      <Modal
-        open={showSyncModal}
-        onClose={() => setShowSyncModal(false)}
-        title="Sync Products with AI Search"
-        primaryAction={{
-          content: 'Start Sync',
-          onAction: handleSync,
-        }}
-        secondaryActions={[
-          {
-            content: 'Cancel',
-            onAction: () => setShowSyncModal(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <TextContainer>
-            <p>
-              This will fetch all products from your Shopify store and generate AI embeddings 
-              for semantic search. The process may take a few minutes for large catalogs.
-            </p>
-            <p>
-              <strong>Current Status:</strong> {indexingStats?.total_products || 0} products indexed
-            </p>
-          </TextContainer>
-        </Modal.Section>
-      </Modal>
     </Page>
   );
 }

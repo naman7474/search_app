@@ -1,1 +1,34 @@
-<div id="ai-search-root" data-shop-url="{{ shop.url }}" data-app-proxy-url="/apps/xpertsearch"></div> 
+<div id="ai-search-root" data-shop-url="{{ shop.secure_url }}" data-app-proxy-url="/apps/xpertsearch"></div>
+<script src="{{ 'main.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "AI Search Bar",
+  "target": "section",
+  "stylesheet": "main.css",
+  "javascript": "main.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "placeholder_text",
+      "label": "Search placeholder text",
+      "default": "Search for products..."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_suggestions",
+      "label": "Show search suggestions",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "max_results",
+      "label": "Maximum results to display",
+      "min": 5,
+      "max": 20,
+      "step": 1,
+      "default": 10
+    }
+  ]
+}
+{% endschema %}

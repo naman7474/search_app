@@ -141,7 +141,7 @@ Rank these products and provide your reasoning:`;
   if (googleAI) {
     try {
       const model = googleAI.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.0-flash',
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 1500,
@@ -156,7 +156,7 @@ Rank these products and provide your reasoning:`;
       if (ranking) {
         return {
           ...ranking,
-          model_used: 'gemini-1.5-flash',
+          model_used: 'gemini-2.0-flash',
         };
       }
     } catch (error) {
