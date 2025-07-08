@@ -3,7 +3,7 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://reaches-namibia-fin-brunswick.trycloudflare.com"
+application_url = "https://jeffrey-concerns-amanda-flavor.trycloudflare.com"
 embedded = true
 
 [webhooks]
@@ -35,13 +35,13 @@ scopes = "write_products,read_products,read_product_listings"
 
 [auth]
 redirect_urls = [
-  "https://reaches-namibia-fin-brunswick.trycloudflare.com/auth/callback",
-  "https://reaches-namibia-fin-brunswick.trycloudflare.com/auth/shopify/callback",
-  "https://reaches-namibia-fin-brunswick.trycloudflare.com/api/auth/callback"
+  "https://jeffrey-concerns-amanda-flavor.trycloudflare.com/auth/callback",
+  "https://jeffrey-concerns-amanda-flavor.trycloudflare.com/auth/shopify/callback",
+  "https://jeffrey-concerns-amanda-flavor.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://reaches-namibia-fin-brunswick.trycloudflare.com"
+url = "https://jeffrey-concerns-amanda-flavor.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 

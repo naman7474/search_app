@@ -1,0 +1,58 @@
+/* Use CSS custom properties for theme compatibility */
+:root {
+  --ai-search-border-radius: var(--border-radius, 8px);
+  --ai-search-font-family: var(--font-stack-body, inherit);
+  --ai-search-primary-color: var(--color-primary, #007bff);
+  --ai-search-background: var(--color-background, #ffffff);
+  --ai-search-text-color: var(--color-text, #333333);
+  --ai-search-border-color: var(--color-border, #e0e0e0);
+  --ai-search-hover-bg: var(--color-background-hover, #f8f9fa);
+  --ai-search-shadow: var(--shadow-base, 0 4px 20px rgba(0, 0, 0, 0.1));
+  --ai-search-focus-ring: var(--focus-ring-color, rgba(0, 123, 255, 0.1));
+  --ai-search-error-color: var(--color-error, #dc3545);
+  --ai-search-success-color: var(--color-success, #28a745);
+}
+
+/* Defensive CSS with proper namespacing */
+.ai-search-widget * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Inherit theme typography */
+.ai-search-widget {
+  font-family: var(--ai-search-font-family);
+  color: var(--ai-search-text-color);
+  line-height: var(--line-height-base, 1.5);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reset list styles */
+.ai-search-widget ul,
+.ai-search-widget ol {
+  list-style: none;
+}
+
+/* Reset button styles */
+.ai-search-widget button {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* Focus visible for accessibility */
+.ai-search-widget *:focus-visible {
+  outline: 2px solid var(--ai-search-primary-color);
+  outline-offset: 2px;
+}
+
+/* Smooth transitions */
+.ai-search-widget * {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+} 

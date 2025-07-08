@@ -1,0 +1,32 @@
+<!-- snippets/ai-search-legacy.liquid -->
+{% if template contains 'search' or template contains 'collection' %}
+  <div class="ai-search-widget">
+    <div id="ai-search-root" 
+         data-shop-url="{{ shop.secure_url }}" 
+         data-app-proxy-url="/apps/xpertsearch"
+         data-placeholder="Search for products..."
+         data-max-results="10"
+         data-show-suggestions="true">
+    </div>
+  </div>
+  <link rel="stylesheet" href="{{ 'theme-compatibility.css' | asset_url }}">
+  <link rel="stylesheet" href="{{ 'main.css' | asset_url }}">
+  <script src="{{ 'legacy-loader.js' | asset_url }}" defer></script>
+  
+  <!-- Installation Instructions -->
+  {% comment %}
+    To use this AI search in your vintage theme:
+    
+    1. Include this snippet in your theme where you want the search bar to appear:
+       {% include 'ai-search-legacy' %}
+    
+    2. Or add it to your search template:
+       In templates/search.liquid, add at the top:
+       {% include 'ai-search-legacy' %}
+    
+    3. For collection pages, add to templates/collection.liquid:
+       {% include 'ai-search-legacy' %}
+    
+    The search bar will automatically integrate with your theme's styling.
+  {% endcomment %}
+{% endif %} 

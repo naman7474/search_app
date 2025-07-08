@@ -1,5 +1,16 @@
-<div id="ai-search-root" data-shop-url="{{ shop.secure_url }}" data-app-proxy-url="/apps/xpertsearch"></div>
+<div class="ai-search-widget">
+  <div id="ai-search-root" 
+       data-shop-url="{{ shop.secure_url }}" 
+       data-app-proxy-url="/apps/xpertsearch"
+       data-placeholder="{{ block.settings.placeholder_text }}"
+       data-max-results="{{ block.settings.max_results }}"
+       data-show-suggestions="{{ block.settings.show_suggestions }}">
+  </div>
+</div>
+
 <script src="{{ 'main.js' | asset_url }}" defer></script>
+<link rel="stylesheet" href="{{ 'theme-compatibility.css' | asset_url }}">
+<link rel="stylesheet" href="{{ 'main.css' | asset_url }}">
 
 {% schema %}
 {
