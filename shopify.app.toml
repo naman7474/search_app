@@ -3,51 +3,51 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://missouri-victorian-premiere-close.trycloudflare.com"
+application_url = "https://counter-supplies-pointed-lindsay.trycloudflare.com"
 embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-07"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
 
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
   [[webhooks.subscriptions]]
-  topics = [ "products/create" ]
-  uri = "/webhooks/products/create"
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
 
   [[webhooks.subscriptions]]
-  topics = [ "products/update" ]
-  uri = "/webhooks/products/update"
+  topics = [ "products/create" ]
+  uri = "/webhooks/products/create"
 
   [[webhooks.subscriptions]]
   topics = [ "products/delete" ]
   uri = "/webhooks/products/delete"
 
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products/update"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_products,read_product_listings"
+scopes = "read_product_listings,read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://missouri-victorian-premiere-close.trycloudflare.com/auth/callback",
-  "https://missouri-victorian-premiere-close.trycloudflare.com/auth/shopify/callback",
-  "https://missouri-victorian-premiere-close.trycloudflare.com/api/auth/callback"
+  "https://counter-supplies-pointed-lindsay.trycloudflare.com/auth/callback",
+  "https://counter-supplies-pointed-lindsay.trycloudflare.com/auth/shopify/callback",
+  "https://counter-supplies-pointed-lindsay.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://missouri-victorian-premiere-close.trycloudflare.com"
+url = "https://counter-supplies-pointed-lindsay.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 
 [pos]
 embedded = false
-
-[build]
-include_config_on_deploy = true
-automatically_update_urls_on_dev = true
