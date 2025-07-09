@@ -1,0 +1,7 @@
+{
+  "ai_search": {
+    "search_placeholder": "Search for products...",
+    "no_results": "No results found",
+    "loading": "Searching..."
+  }
+} 
