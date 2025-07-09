@@ -42,45 +42,19 @@ var AISearchApp = (() => {
   ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // src/index.jsx
-  var src_exports = {};
-  __export(src_exports, {
-    default: () => src_default
+  // src/index.temp.jsx
+  var index_temp_exports = {};
+  __export(index_temp_exports, {
+    default: () => index_temp_default
   });
   var import_react = __toESM(__require("react"));
   var import_client = __require("react-dom/client");
   var import_jsx_runtime = __require("react/jsx-runtime");
-  var SearchIcon = () => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-    "svg",
-    {
-      xmlns: "http://www.w3.org/2000/svg",
-      width: "20",
-      height: "20",
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "2",
-      strokeLinecap: "round",
-      strokeLinejoin: "round",
-      children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("circle", { cx: "11", cy: "11", r: "8" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("line", { x1: "21", y1: "21", x2: "16.65", y2: "16.65" })
-      ]
-    }
-  );
-  var ChatIcon = () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-    "svg",
-    {
-      xmlns: "http://www.w3.org/2000/svg",
-      width: "20",
-      height: "20",
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "2",
-      children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" })
-    }
-  );
+  var SearchIcon = () => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("circle", { cx: "11", cy: "11", r: "8" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "m21 21-4.35-4.35" })
+  ] });
+  var SparkleIcon = () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M12 3v18m9-9H3m7.5-7.5L3 21m18-10.5L10.5 21m10.5-18L3 13.5M21 3L13.5 10.5" }) });
   var UnifiedSearch = ({ shopUrl, appProxyUrl, onProductClick, formatPrice, onClose, placeholderText }) => {
     const [query, setQuery] = (0, import_react.useState)("");
     const [products, setProducts] = (0, import_react.useState)([]);
@@ -111,7 +85,7 @@ var AISearchApp = (() => {
       setHasSearched(true);
       try {
         const shopDomain = shopUrl.replace("https://", "").replace("http://", "").replace("/", "");
-        const searchUrl = `${appProxyUrl}/search?q=${encodeURIComponent(searchQuery)}&shop=${shopDomain}`;
+        const searchUrl = `${appProxyUrl}/api/search?q=${encodeURIComponent(searchQuery)}&shop=${shopDomain}`;
         const response = await fetch(searchUrl, {
           method: "GET",
           headers: {
@@ -123,7 +97,11 @@ var AISearchApp = (() => {
           throw new Error(`Search failed: ${response.statusText}`);
         }
         const data = await response.json();
-        if (data.success && data.data && data.data.products) {
+        console.log("Search response:", data);
+        console.log("Search data:", data?.data);
+        console.log("Products found:", data?.data?.products?.length || 0);
+        if (data.success && data.data && data.data.products && Array.isArray(data.data.products)) {
+          console.log("Setting products:", data.data.products);
           setProducts(data.data.products);
           setContext({
             queries: [searchQuery],
@@ -133,6 +111,14 @@ var AISearchApp = (() => {
             sessionId: data.data.search_id || Date.now().toString()
           });
         } else {
+          console.log("No products found or invalid response structure", data);
+          console.log("Response structure check:", {
+            hasSuccess: !!data.success,
+            hasData: !!data.data,
+            hasProducts: !!data.data?.products,
+            isArray: Array.isArray(data.data?.products),
+            productsLength: data.data?.products?.length
+          });
           setProducts([]);
           setError(data.error || "No products found");
         }
@@ -176,7 +162,7 @@ var AISearchApp = (() => {
       setIsChatLoading(true);
       try {
         const shopDomain = shopUrl.replace("https://", "").replace("http://", "").replace("/", "");
-        const conversationUrl = `${appProxyUrl}/conversation`;
+        const conversationUrl = `${appProxyUrl}/api/conversation`;
         const response = await fetch(conversationUrl, {
           method: "POST",
           headers: {
@@ -281,8 +267,8 @@ var AISearchApp = (() => {
               onClick: handleRefineSearch,
               type: "button",
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChatIcon, {}),
-                "Refine Search"
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SparkleIcon, {}),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Refine with AI" })
               ]
             }
           )
@@ -324,7 +310,7 @@ var AISearchApp = (() => {
       ] }),
       showChat && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "chat-section", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "chat-header", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h4", { children: "Refine Your Search" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h4", { children: "Refine Your Search with AI" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
             "button",
             {
@@ -384,12 +370,20 @@ var AISearchApp = (() => {
     const [query, setQuery] = (0, import_react.useState)("");
     const [isModalOpen, setIsModalOpen] = (0, import_react.useState)(false);
     const searchInputRef = (0, import_react.useRef)(null);
-    const debounceTimerRef = (0, import_react.useRef)(null);
     const rootElement = document.getElementById("ai-search-root");
     const shopUrl = rootElement?.dataset?.shopUrl || window.Shopify?.shop || "";
     const appProxyUrl = rootElement?.dataset?.appProxyUrl || "/apps/xpertsearch";
     const displayMode = rootElement?.dataset?.displayMode || window.AISearchConfig?.displayMode || "bar";
     const placeholderText = rootElement?.dataset?.placeholder || window.AISearchConfig?.placeholderText || "Search for products...";
+    console.log("AI Search Configuration:", {
+      shopUrl,
+      appProxyUrl,
+      displayMode,
+      placeholderText,
+      rootElement,
+      dataset: rootElement?.dataset,
+      allDataAttributes: rootElement ? Object.keys(rootElement.dataset) : "no element"
+    });
     (0, import_react.useEffect)(() => {
       const handleKeyDown = (event) => {
         if (event.key === "Escape" && isModalOpen) {
@@ -465,8 +459,8 @@ var AISearchApp = (() => {
             onChange: handleInputChange,
             onKeyPress: handleKeyPress,
             onFocus: openModal,
-            "aria-label": "Search products",
-            readOnly: true
+            onClick: openModal,
+            "aria-label": "Search products"
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -510,7 +504,7 @@ var AISearchApp = (() => {
         console.error("Failed to initialize AI Search App:", error);
       }
     } else {
-      console.error("AI Search root element not found");
+      console.error("AI Search container element not found");
     }
   }
   if (document.readyState === "loading") {
@@ -518,6 +512,6 @@ var AISearchApp = (() => {
   } else {
     initializeApp();
   }
-  var src_default = AISearchApp;
-  return __toCommonJS(src_exports);
+  var index_temp_default = AISearchApp;
+  return __toCommonJS(index_temp_exports);
 })();

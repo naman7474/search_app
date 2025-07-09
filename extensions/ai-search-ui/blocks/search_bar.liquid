@@ -1,463 +1,200 @@
-<!-- AI Search - Universal search replacement with progressive enhancement -->
-<div class="ai-search-widget" {{ block.shopify_attributes }} style="width: 100%; position: relative;">
+<!-- AI Search Block - Proper Theme App Extension Implementation -->
+<div class="ai-search-block" {{ block.shopify_attributes }}>
   
-  <!-- Progressive Enhancement Loader -->
-  <script src="{{ 'progressive-enhancement.js' | asset_url }}" defer></script>
-  <script src="{{ 'search-interceptor.js' | asset_url }}" defer></script>
-  
-  <!-- Noscript Fallback -->
-  <noscript>
-    <style>
-      .ai-search-enhanced { display: none !important; }
-      .ai-search-fallback { display: block !important; }
-    </style>
-  </noscript>
-  
-  <!-- Enhanced Search Form (with AI capabilities) -->
-  <div class="ai-search-enhanced" style="position: relative;">
-    <div id="ai-search-root" 
-         data-shop-url="{{ shop.secure_url }}" 
-         data-shop-domain="{{ shop.permanent_domain }}"
-         data-app-proxy-url="/apps/xpertsearch"
-         data-display-mode="{{ block.settings.display_mode }}"
-         data-results-limit="{{ block.settings.max_results | default: 10 }}"
-         data-show-suggestions="{{ block.settings.show_suggestions | default: true }}"
-         data-enable-voice="{{ block.settings.enable_voice | default: false }}"
-         data-enable-realtime="{{ block.settings.enable_realtime | default: true }}"
-         data-placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
-         data-search-level="enhanced">
+  {% if block.settings.display_mode == 'button' %}
+    <!-- Search Button -->
+    <button class="ai-search-trigger-btn" 
+            data-block-id="{{ block.id }}"
+            data-shop-domain="{{ shop.permanent_domain }}"
+            data-max-results="{{ block.settings.max_results | default: 10 }}"
+            data-placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
+            style="
+              --button-color: {{ block.settings.button_color | default: '#333' }};
+              --button-text-color: {{ block.settings.button_text_color | default: '#fff' }};
+              --button-hover-color: {{ block.settings.button_hover_color | default: '#555' }};
+              --font-size: {{ block.settings.font_size | default: '16px' }};
+              --font-family: {{ block.settings.font_family | default: 'inherit' }};
+              --input-padding: {{ block.settings.input_padding | default: '12px 16px' }};
+              --border-radius: {{ block.settings.border_radius | default: '4px' }};
+            ">
       
-      <!-- AI-Powered Search Form -->
-      <form class="ai-search-form" 
-            action="/search" 
-            method="get" 
-            role="search"
-            data-ai-search-form="true">
-        
-        <div class="ai-search-input-container" style="position: relative; display: flex; align-items: center;">
-          
-          <!-- Search Input -->
-          <input type="search" 
-                 name="q" 
-                 class="ai-search-input"
-                 placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
-                 autocomplete="off"
-                 autocorrect="off"
-                 autocapitalize="off"
-                 spellcheck="false"
-                 style="width: 100%; padding: {{ block.settings.input_padding | default: '12px 16px' }}; 
-                        border: {{ block.settings.border_width | default: '1px' }} solid {{ block.settings.border_color | default: '#ddd' }};
-                        border-radius: {{ block.settings.border_radius | default: '4px' }};
-                        font-size: {{ block.settings.font_size | default: '16px' }};
-                        background: {{ block.settings.background_color | default: '#fff' }};
-                        color: {{ block.settings.text_color | default: '#333' }};"
-                 data-search-input="true">
-          
-          <!-- Voice Search Button (if enabled) -->
-          {% if block.settings.enable_voice %}
-          <button type="button" 
-                  class="ai-search-voice-btn"
-                  data-search-voice="true"
-                  style="position: absolute; right: 40px; background: none; border: none; cursor: pointer; padding: 8px;"
-                  title="Voice search"
-                  aria-label="Voice search">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
-            </svg>
-          </button>
-          {% endif %}
-          
-          <!-- Search Submit Button -->
-          <button type="submit" 
-                  class="ai-search-submit-btn"
-                  style="position: absolute; right: 8px; background: {{ block.settings.button_color | default: '#333' }}; 
-                         color: {{ block.settings.button_text_color | default: '#fff' }}; border: none; 
-                         padding: 8px 12px; border-radius: {{ block.settings.button_radius | default: '3px' }}; 
-                         cursor: pointer; font-size: 14px;"
-                  aria-label="Search">
-            {% if block.settings.button_text != blank %}
-              {{ block.settings.button_text }}
-            {% else %}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-              </svg>
-            {% endif %}
-          </button>
-        </div>
-        
-        <!-- Real-time Results Container -->
-        <div class="ai-search-results-container" 
-             style="position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; display: none;">
-          <!-- Results will be populated by JavaScript -->
-        </div>
-        
-      </form>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+      </svg>
+      {{ block.settings.button_text | default: 'Search' }}
+    </button>
+    
+  {% else %}
+    <!-- Search Input (Fake - Opens Modal) -->
+    <div class="ai-search-input-wrapper"
+         style="
+           --background-color: {{ block.settings.background_color | default: '#fff' }};
+           --text-color: {{ block.settings.text_color | default: '#333' }};
+           --border-color: {{ block.settings.border_color | default: '#ddd' }};
+           --border-width: {{ block.settings.border_width | default: '1px' }};
+           --border-radius: {{ block.settings.border_radius | default: '4px' }};
+           --focus-color: {{ block.settings.focus_color | default: '#007cba' }};
+           --font-size: {{ block.settings.font_size | default: '16px' }};
+           --font-family: {{ block.settings.font_family | default: 'inherit' }};
+           --input-padding: {{ block.settings.input_padding | default: '12px 16px' }};
+         ">
       
-      <!-- Loading State -->
-      <div class="ai-search-loading" style="display: none; text-align: center; padding: 20px;">
-        <div class="ai-search-spinner" style="display: inline-block; width: 20px; height: 20px; 
-             border: 2px solid #f3f3f3; border-top: 2px solid #333; border-radius: 50%; 
-             animation: ai-search-spin 1s linear infinite;"></div>
-        <div style="margin-top: 8px; font-size: 14px; color: #666;">Searching...</div>
+      <input type="text" 
+             class="ai-search-input"
+             placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
+             readonly
+             data-block-id="{{ block.id }}"
+             data-shop-domain="{{ shop.permanent_domain }}"
+             data-max-results="{{ block.settings.max_results | default: 10 }}">
+      
+      <div class="ai-search-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
       </div>
-      
     </div>
-  </div>
+    
+  {% endif %}
   
-  <!-- Fallback Search Form (no JavaScript) -->
-  <div class="ai-search-fallback" style="display: none;">
-    <form action="/search" method="get" role="search" class="search-form">
-      <div style="display: flex; align-items: center;">
-        <input type="search" 
-               name="q" 
-               placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
-               style="width: 100%; padding: {{ block.settings.input_padding | default: '12px 16px' }}; 
-                      border: {{ block.settings.border_width | default: '1px' }} solid {{ block.settings.border_color | default: '#ddd' }};
-                      border-radius: {{ block.settings.border_radius | default: '4px' }} 0 0 {{ block.settings.border_radius | default: '4px' }};
-                      font-size: {{ block.settings.font_size | default: '16px' }};">
-        <button type="submit" 
-                style="padding: {{ block.settings.input_padding | default: '12px 16px' }}; 
-                       background: {{ block.settings.button_color | default: '#333' }}; 
-                       color: {{ block.settings.button_text_color | default: '#fff' }}; 
-                       border: none; border-radius: 0 {{ block.settings.border_radius | default: '4px' }} {{ block.settings.border_radius | default: '4px' }} 0;
-                       cursor: pointer;">
-          {{ block.settings.button_text | default: 'Search' }}
-        </button>
-      </div>
-    </form>
-  </div>
-
-  <!-- Performance and Compatibility Styles -->
-  <style>
-    /* Core animations */
-    @keyframes ai-search-spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    @keyframes ai-search-fadeIn {
-      from { opacity: 0; transform: translateY(-5px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    /* Enhanced search styles */
-    .ai-search-widget {
-      font-family: {{ block.settings.font_family | default: 'inherit' }};
-    }
-    
-    .ai-search-input {
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-    
-    .ai-search-input:focus {
-      outline: none;
-      border-color: {{ block.settings.focus_color | default: '#007cba' }};
-      box-shadow: 0 0 0 1px {{ block.settings.focus_color | default: '#007cba' }};
-    }
-    
-    .ai-search-submit-btn {
-      transition: background-color 0.2s ease;
-    }
-    
-    .ai-search-submit-btn:hover {
-      background-color: {{ block.settings.button_hover_color | default: '#555' }};
-    }
-    
-    .ai-search-voice-btn {
-      transition: opacity 0.2s ease;
-    }
-    
-    .ai-search-voice-btn:hover {
-      opacity: 0.7;
-    }
-    
-    .ai-search-results-container {
-      background: white;
-      border: 1px solid #ddd;
-      border-top: none;
-      border-radius: 0 0 {{ block.settings.border_radius | default: '4px' }} {{ block.settings.border_radius | default: '4px' }};
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      animation: ai-search-fadeIn 0.2s ease;
-    }
-    
-    /* Responsive design */
-    @media (max-width: 768px) {
-      .ai-search-input {
-        font-size: 16px; /* Prevent zoom on iOS */
-      }
-      
-      .ai-search-voice-btn {
-        right: 45px;
-      }
-    }
-    
-    /* Low-end device optimizations */
-    .ai-search-low-end-device .ai-search-results-container {
-      animation: none;
-      transition: none;
-    }
-    
-    .ai-search-low-end-device .ai-search-input,
-    .ai-search-low-end-device .ai-search-submit-btn {
-      transition: none;
-    }
-    
-    /* Slow connection optimizations */
-    .ai-search-slow-connection .ai-search-results-container {
-      animation-duration: 0.1s;
-    }
-    
-    /* Fallback mode styles */
-    .ai-search-fallback-mode .ai-search-enhanced {
-      display: none !important;
-    }
-    
-    .ai-search-fallback-mode .ai-search-fallback {
-      display: block !important;
-    }
-    
-    /* High contrast mode support */
-    @media (prefers-contrast: high) {
-      .ai-search-input {
-        border-width: 2px;
-      }
-    }
-    
-    /* Reduced motion support */
-    @media (prefers-reduced-motion: reduce) {
-      .ai-search-input,
-      .ai-search-submit-btn,
-      .ai-search-voice-btn {
-        transition: none;
-      }
-      
-      .ai-search-results-container {
-        animation: none;
-      }
-      
-      .ai-search-spinner {
-        animation: none;
-      }
-    }
-    
-    /* Dark mode support */
-    @media (prefers-color-scheme: dark) {
-      .ai-search-results-container {
-        background: #333;
-        border-color: #555;
-        color: white;
-      }
-    }
-  </style>
-
-  <!-- Initialize AI Search -->
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      // Initialize progressive enhancement
-      if (typeof window.SearchEnhancer !== 'undefined') {
-        window.SearchEnhancer.init();
-      }
-      
-      // Initialize AI search interceptor
-      if (typeof window.AISearchInterceptor !== 'undefined') {
-        window.AISearchInterceptor.init();
-      }
-      
-      // Additional configuration
-      const searchWidget = document.querySelector('[data-ai-search-form]');
-      if (searchWidget) {
-        // Configure based on block settings
-        const config = {
-          realtimeEnabled: {{ block.settings.enable_realtime | default: true }},
-          voiceEnabled: {{ block.settings.enable_voice | default: false }},
-          maxResults: {{ block.settings.max_results | default: 10 }},
-          showSuggestions: {{ block.settings.show_suggestions | default: true }}
-        };
-        
-        // Apply configuration
-        if (typeof window.AISearchInterceptor !== 'undefined') {
-          Object.assign(window.AISearchInterceptor.config, config);
-        }
-      }
-    });
-  </script>
-
 </div>
 
 {% schema %}
 {
   "name": "AI Search",
   "target": "section",
-  "stylesheet": "main.css",
-  "javascript": "main.js",
+  "javascript": "search-modal.js",
+  "stylesheet": "search-modal.css",
   "settings": [
     {
       "type": "header",
-      "content": "Display Options"
+      "content": "Display Settings"
     },
     {
       "type": "select",
       "id": "display_mode",
       "label": "Display Mode",
       "options": [
-        {
-          "value": "bar",
-          "label": "Search Bar"
-        },
-        {
-          "value": "button",
-          "label": "Search Button"
-        },
-        {
-          "value": "inline",
-          "label": "Inline Search"
-        }
+        { "value": "button", "label": "Search Button" },
+        { "value": "input", "label": "Search Input" }
       ],
-      "default": "bar",
-      "info": "Choose how the search widget appears on your store"
-    },
-    {
-      "type": "range",
-      "id": "max_results",
-      "min": 5,
-      "max": 20,
-      "step": 1,
-      "label": "Maximum Results",
-      "default": 10,
-      "info": "Number of products to show in search results"
+      "default": "button"
     },
     {
       "type": "text",
       "id": "placeholder_text",
       "label": "Placeholder Text",
-      "default": "Search for products...",
-      "info": "Text shown when the search field is empty"
+      "default": "Search for products..."
     },
     {
       "type": "text",
       "id": "button_text",
       "label": "Button Text",
-      "info": "Leave empty to show search icon instead"
+      "default": "Search"
+    },
+    {
+      "type": "range",
+      "id": "max_results",
+      "label": "Maximum Results",
+      "min": 5,
+      "max": 20,
+      "step": 1,
+      "default": 10
     },
     {
       "type": "header",
-      "content": "Features"
+      "content": "Button Style"
     },
     {
-      "type": "checkbox",
-      "id": "show_suggestions",
-      "label": "Show Search Suggestions",
-      "default": true,
-      "info": "Display helpful search suggestions to users"
+      "type": "color",
+      "id": "button_color",
+      "label": "Button Background",
+      "default": "#333333"
     },
     {
-      "type": "checkbox",
-      "id": "enable_realtime",
-      "label": "Enable Real-time Search",
-      "default": true,
-      "info": "Show results as user types (may impact performance on slow devices)"
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Button Text Color",
+      "default": "#ffffff"
     },
     {
-      "type": "checkbox",
-      "id": "enable_voice",
-      "label": "Enable Voice Search",
-      "default": false,
-      "info": "Add voice search capability (modern browsers only)"
+      "type": "color",
+      "id": "button_hover_color",
+      "label": "Button Hover Color",
+      "default": "#555555"
     },
     {
       "type": "header",
-      "content": "Styling"
+      "content": "Input Style"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Input Background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text Color",
+      "default": "#333333"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border Color",
+      "default": "#dddddd"
+    },
+    {
+      "type": "color",
+      "id": "focus_color",
+      "label": "Focus Color",
+      "default": "#007cba"
+    },
+    {
+      "type": "header",
+      "content": "Typography"
+    },
+    {
+      "type": "font_picker",
+      "id": "font_family",
+      "label": "Font Family",
+      "default": "assistant_n4"
+    },
+    {
+      "type": "select",
+      "id": "font_size",
+      "label": "Font Size",
+      "options": [
+        { "value": "14px", "label": "Small" },
+        { "value": "16px", "label": "Medium" },
+        { "value": "18px", "label": "Large" }
+      ],
+      "default": "16px"
+    },
+    {
+      "type": "header",
+      "content": "Spacing"
     },
     {
       "type": "text",
       "id": "input_padding",
       "label": "Input Padding",
       "default": "12px 16px",
-      "info": "CSS padding for the search input"
+      "info": "CSS padding value (e.g., 12px 16px)"
     },
     {
       "type": "text",
       "id": "border_radius",
       "label": "Border Radius",
       "default": "4px",
-      "info": "Rounded corners for input and button"
+      "info": "CSS border radius value (e.g., 4px)"
     },
     {
       "type": "text",
       "id": "border_width",
       "label": "Border Width",
       "default": "1px",
-      "info": "Width of input border"
-    },
-    {
-      "type": "color",
-      "id": "border_color",
-      "label": "Border Color",
-      "default": "#ddd",
-      "info": "Color of input border"
-    },
-    {
-      "type": "color",
-      "id": "background_color",
-      "label": "Background Color",
-      "default": "#fff",
-      "info": "Background color of search input"
-    },
-    {
-      "type": "color",
-      "id": "text_color",
-      "label": "Text Color",
-      "default": "#333",
-      "info": "Color of input text"
-    },
-    {
-      "type": "color",
-      "id": "focus_color",
-      "label": "Focus Color",
-      "default": "#007cba",
-      "info": "Color when input is focused"
-    },
-    {
-      "type": "color",
-      "id": "button_color",
-      "label": "Button Color",
-      "default": "#333",
-      "info": "Background color of search button"
-    },
-    {
-      "type": "color",
-      "id": "button_text_color",
-      "label": "Button Text Color",
-      "default": "#fff",
-      "info": "Color of button text/icon"
-    },
-    {
-      "type": "color",
-      "id": "button_hover_color",
-      "label": "Button Hover Color",
-      "default": "#555",
-      "info": "Button color on hover"
-    },
-    {
-      "type": "text",
-      "id": "button_radius",
-      "label": "Button Border Radius",
-      "default": "3px",
-      "info": "Rounded corners for button"
-    },
-    {
-      "type": "text",
-      "id": "font_size",
-      "label": "Font Size",
-      "default": "16px",
-      "info": "Size of input text"
-    },
-    {
-      "type": "text",
-      "id": "font_family",
-      "label": "Font Family",
-      "default": "inherit",
-      "info": "Font family for search widget"
+      "info": "CSS border width value (e.g., 1px)"
     }
   ]
 }

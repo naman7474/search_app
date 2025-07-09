@@ -3,7 +3,7 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://counter-supplies-pointed-lindsay.trycloudflare.com"
+application_url = "https://incidents-clouds-largely-grew.trycloudflare.com"
 embedded = true
 
 [build]
@@ -39,13 +39,13 @@ scopes = "read_product_listings,read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://counter-supplies-pointed-lindsay.trycloudflare.com/auth/callback",
-  "https://counter-supplies-pointed-lindsay.trycloudflare.com/auth/shopify/callback",
-  "https://counter-supplies-pointed-lindsay.trycloudflare.com/api/auth/callback"
+  "https://incidents-clouds-largely-grew.trycloudflare.com/auth/callback",
+  "https://incidents-clouds-largely-grew.trycloudflare.com/auth/shopify/callback",
+  "https://incidents-clouds-largely-grew.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://counter-supplies-pointed-lindsay.trycloudflare.com"
+url = "https://incidents-clouds-largely-grew.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 

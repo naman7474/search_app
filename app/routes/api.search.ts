@@ -142,12 +142,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     // Authenticate and get storefront access
     const { storefront } = await authenticate.public.appProxy(request);
-    
-    const url = new URL(request.url);
-    const query = url.searchParams.get("q");
-    const limit = parseInt(url.searchParams.get("limit") || "20");
-    const offset = parseInt(url.searchParams.get("offset") || "0");
-    const shopDomain = url.searchParams.get("shop");
+  
+  const url = new URL(request.url);
+  const query = url.searchParams.get("q");
+  const limit = parseInt(url.searchParams.get("limit") || "20");
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+  const shopDomain = url.searchParams.get("shop");
     
     // Validate request origin
     if (!validateRequestOrigin(request)) {
@@ -174,33 +174,33 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       });
     }
-    
-    if (!query || !shopDomain) {
+  
+  if (!query || !shopDomain) {
       return json({ 
         success: false,
         error: "Missing required parameters: q and shop",
         fallback_available: false
       }, { status: 400 });
-    }
+  }
     
     // Performance timeout for AI search
     const AI_SEARCH_TIMEOUT = 5000; // 5 seconds
     let aiResults = null;
     let usedFallback = false;
+  
+  try {
+    const sessionId = url.searchParams.get("session_id") || undefined;
+    const userAgent = request.headers.get("user-agent") || undefined;
     
-    try {
-      const sessionId = url.searchParams.get("session_id") || undefined;
-      const userAgent = request.headers.get("user-agent") || undefined;
-      
       // Wrap AI search in timeout
       const aiSearchPromise = searchProducts({
-        query,
-        shop_domain: shopDomain,
-        limit,
-        offset,
-        session_id: sessionId,
-        user_agent: userAgent,
-      });
+      query,
+      shop_domain: shopDomain,
+      limit,
+      offset,
+      session_id: sessionId,
+      user_agent: userAgent,
+    });
       
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI search timeout')), AI_SEARCH_TIMEOUT)
@@ -274,7 +274,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
-    await authenticate.public.appProxy(request);
+  await authenticate.public.appProxy(request);
     
     // Validate request origin for POST requests too
     if (!validateRequestOrigin(request)) {
@@ -292,32 +292,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         error: "Rate limit exceeded" 
       }, { status: 429 });
     }
-    
-    if (request.method === "POST") {
-      try {
-        const body = await request.json();
-        const { search_id, product_id } = body;
-        
-        if (!search_id || !product_id) {
+  
+  if (request.method === "POST") {
+    try {
+      const body = await request.json();
+      const { search_id, product_id } = body;
+      
+      if (!search_id || !product_id) {
           return json({ 
             success: false,
             error: "Missing search_id or product_id" 
           }, { status: 400 });
-        }
-        
-        await trackProductClick(search_id, product_id);
-        
-        return json({ success: true });
-        
-      } catch (error) {
-        console.error("Click tracking error:", error);
-        return json({
-          success: false,
-          error: "Failed to track click",
-        }, { status: 500 });
       }
+      
+      await trackProductClick(search_id, product_id);
+      
+      return json({ success: true });
+      
+    } catch (error) {
+      console.error("Click tracking error:", error);
+      return json({
+        success: false,
+        error: "Failed to track click",
+      }, { status: 500 });
     }
-    
+  }
+  
     return json({ 
       success: false,
       error: "Method not allowed" 
