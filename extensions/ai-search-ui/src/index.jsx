@@ -49,21 +49,6 @@ const ChatIcon = () => (
   </svg>
 );
 
-const CameraIcon = () => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    width="16" 
-    height="16" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2"
-  >
-    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-    <circle cx="12" cy="13" r="4"></circle>
-  </svg>
-);
-
 // Conversational Search Component
 const ConversationalSearch = ({ shopUrl, appProxyUrl, onProductClick, formatPrice, onClose }) => {
   const [messages, setMessages] = useState([
@@ -357,334 +342,13 @@ const ConversationalSearch = ({ shopUrl, appProxyUrl, onProductClick, formatPric
   );
 };
 
-// Visual Search Component
-const VisualSearch = ({ shopUrl, appProxyUrl, onResults, onProductClick, formatPrice, onClose }) => {
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState(null);
-  const [error, setError] = useState(null);
-  const [dragActive, setDragActive] = useState(false);
-
-  const fileInputRef = useRef(null);
-
-  // Supported file types
-  const SUPPORTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-
-  const validateFile = (file) => {
-    if (!SUPPORTED_TYPES.includes(file.type)) {
-      return 'Please upload a JPEG, PNG, WebP, or GIF image.';
-    }
-    
-    if (file.size > MAX_SIZE) {
-      return 'Image must be smaller than 5MB.';
-    }
-    
-    return null;
-  };
-
-  const handleFileSelect = (file) => {
-    const validationError = validateFile(file);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setSelectedImage(file);
-    setError(null);
-    setSearchResults(null);
-
-    // Create preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImagePreview(e.target.result);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleInputChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
-    }
-  };
-
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    const imageFile = files.find(file => SUPPORTED_TYPES.includes(file.type));
-    
-    if (imageFile) {
-      handleFileSelect(imageFile);
-    } else {
-      setError('Please drop a valid image file (JPEG, PNG, WebP, or GIF).');
-    }
-  };
-
-  const performVisualSearch = async () => {
-    if (!selectedImage) return;
-
-    setIsSearching(true);
-    setError(null);
-
-    try {
-      const shopDomain = shopUrl.replace('https://', '').replace('http://', '').replace('/', '');
-      const formData = new FormData();
-      formData.append('image', selectedImage);
-      formData.append('shop', shopDomain);
-      formData.append('limit', '20');
-      formData.append('session_id', `visual-${Date.now()}`);
-
-      const response = await fetch(`${appProxyUrl}/api/visual-search`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Search failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.data) {
-        setSearchResults(data.data);
-        onResults(data.data);
-      } else {
-        throw new Error(data.error || 'Visual search failed');
-      }
-
-    } catch (err) {
-      console.error('Visual search error:', err);
-      setError(err.message || 'Visual search failed. Please try again.');
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const clearSelection = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    setSearchResults(null);
-    setError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  return (
-    <div className="visual-search-container">
-      {/* Header */}
-      <div className="visual-search-header">
-        <h3>Visual Search</h3>
-        <button 
-          className="visual-search-close-button" 
-          onClick={onClose}
-          aria-label="Close visual search"
-          type="button"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* Upload Area */}
-      {!selectedImage && (
-        <div
-          className={`visual-search-dropzone ${dragActive ? 'drag-active' : ''}`}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <div className="dropzone-content">
-            <div className="dropzone-icon">📸</div>
-            <p className="dropzone-text">
-              Drop an image here or click to upload
-            </p>
-            <p className="dropzone-subtext">
-              Search for similar products using photos
-            </p>
-            <p className="dropzone-formats">
-              Supports JPEG, PNG, WebP, GIF (max 5MB)
-            </p>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={SUPPORTED_TYPES.join(',')}
-            onChange={handleInputChange}
-            style={{ display: 'none' }}
-          />
-        </div>
-      )}
-
-      {/* Image Preview & Controls */}
-      {selectedImage && imagePreview && (
-        <div className="visual-search-preview">
-          <div className="preview-image-container">
-            <img 
-              src={imagePreview} 
-              alt="Selected for visual search" 
-              className="preview-image"
-            />
-            <button 
-              className="preview-clear-button"
-              onClick={clearSelection}
-              aria-label="Remove image"
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-          
-          <div className="preview-actions">
-            <button
-              className="visual-search-button"
-              onClick={performVisualSearch}
-              disabled={isSearching}
-              type="button"
-            >
-              {isSearching ? 'Searching...' : 'Find Similar Products'}
-            </button>
-            
-            <button
-              className="visual-search-button-secondary"
-              onClick={clearSelection}
-              disabled={isSearching}
-              type="button"
-            >
-              Choose Different Image
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <div className="visual-search-error">
-          <p>{error}</p>
-        </div>
-      )}
-
-      {/* Loading State */}
-      {isSearching && (
-        <div className="visual-search-loading">
-          <div className="loading-spinner"></div>
-          <p>Analyzing your image and finding similar products...</p>
-        </div>
-      )}
-
-      {/* Search Results */}
-      {searchResults && (
-        <div className="visual-search-results">
-          <div className="results-header">
-            <h4>Found {searchResults.total_count} similar products</h4>
-            {searchResults.visual_features && (
-              <div className="extracted-features">
-                <p className="features-label">Detected:</p>
-                <div className="features-tags">
-                  <span className="feature-tag">{searchResults.visual_features.category}</span>
-                  {searchResults.visual_features.colors.slice(0, 2).map((color, idx) => (
-                    <span key={idx} className="feature-tag color-tag">{color}</span>
-                  ))}
-                  {searchResults.visual_features.style.slice(0, 2).map((style, idx) => (
-                    <span key={idx} className="feature-tag">{style}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="visual-search-products">
-            {searchResults.products.map((product) => (
-              <div 
-                key={product.id} 
-                className="visual-search-product"
-                onClick={() => onProductClick(product)}
-              >
-                {product.image_url && (
-                  <div className="product-image-container">
-                    <img 
-                      src={product.image_url} 
-                      alt={product.title}
-                      className="product-image"
-                    />
-                    <div className="similarity-badge">
-                      {Math.round(product.similarity_score * 100)}% match
-                    </div>
-                  </div>
-                )}
-                
-                <div className="product-info">
-                  <h5 className="product-title">{product.title}</h5>
-                  {product.vendor && (
-                    <p className="product-vendor">{product.vendor}</p>
-                  )}
-                  <div className="product-price">
-                    {product.price_min !== null && (
-                      <span className="price">
-                        {formatPrice(product.price_min)}
-                        {product.price_max !== product.price_min && product.price_max !== null && (
-                          ` - ${formatPrice(product.price_max)}`
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  {!product.available && (
-                    <span className="product-unavailable">Out of stock</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Instructions */}
-      {!selectedImage && !isSearching && !searchResults && (
-        <div className="visual-search-instructions">
-          <h4>How Visual Search Works</h4>
-          <ul>
-            <li>📸 Upload a photo of any product</li>
-            <li>🔍 AI analyzes colors, style, and features</li>
-            <li>🛍️ Find similar products in this store</li>
-            <li>⚡ Get results in seconds</li>
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const AISearchApp = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState(null);
-  const [searchMode, setSearchMode] = useState('traditional'); // 'traditional', 'conversational', or 'visual'
+  const [searchMode, setSearchMode] = useState('traditional'); // 'traditional' or 'conversational'
   const searchInputRef = useRef(null);
   const modalInputRef = useRef(null);
   const debounceTimerRef = useRef(null);
@@ -902,15 +566,6 @@ const AISearchApp = () => {
                 formatPrice={formatPrice}
                 onClose={closeModal}
               />
-            ) : searchMode === 'visual' ? (
-              <VisualSearch
-                shopUrl={shopUrl}
-                appProxyUrl={appProxyUrl}
-                onResults={setResults}
-                onProductClick={handleProductClick}
-                formatPrice={formatPrice}
-                onClose={closeModal}
-              />
             ) : (
               <>
                 <div className="modal-header">
@@ -950,14 +605,6 @@ const AISearchApp = () => {
                       type="button"
                     >
                       <ChatIcon />
-                    </button>
-                    <button
-                      className={`mode-toggle-button ${searchMode === 'visual' ? 'active' : ''}`}
-                      onClick={() => setSearchMode('visual')}
-                      aria-label="Visual search"
-                      type="button"
-                    >
-                      <CameraIcon />
                     </button>
                   </div>
                   <button 
@@ -1023,9 +670,7 @@ const AISearchApp = () => {
                       <h3>Start typing to search</h3>
                       <p>Search will begin automatically after 3 seconds, or press Enter to search immediately</p>
                       <div className="search-mode-hint">
-                        <p>💡 <strong>Try our AI modes:</strong></p>
-                        <p>• <ChatIcon /> <strong>Chat mode</strong> for conversational search</p>
-                        <p>• <CameraIcon /> <strong>Visual search</strong> to find products using photos</p>
+                        <p>💡 <strong>Try the AI Chat mode</strong> - Click the <ChatIcon /> icon for conversational search!</p>
                       </div>
                     </div>
                   )}
