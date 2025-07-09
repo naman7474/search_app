@@ -1,68 +1,64 @@
 <!-- AI Search - Replace your theme's search with AI-powered instant results -->
-<div class="ai-search-widget" style="width: 100%;">
-  <div class="ai-search-input-wrapper" style="position: relative; display: block; width: 100%;">
-    <input 
-      type="search" 
-      name="q" 
-      placeholder="{{ block.settings.placeholder_text }}"
-      class="ai-search-input"
-      autocomplete="off"
-      style="
-        width: 100%; 
-        padding: 12px 16px; 
-        border: 1px solid #ddd; 
-        border-radius: 8px; 
-        font-size: 16px;
-        box-sizing: border-box;
-        outline: none;
-      "
-    >
+<div class="ai-search-widget" {{ block.shopify_attributes }} style="width: 100%;">
+  <div id="ai-search-root" 
+       data-shop-url="{{ shop.secure_url }}" 
+       data-app-proxy-url="/apps/xpertsearch"
+       data-display-mode="{{ block.settings.display_mode }}"
+       data-results-limit="{{ block.settings.max_results | default: 10 }}"
+       data-show-suggestions="{{ block.settings.show_suggestions | default: true }}"
+       data-placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}">
+    <!-- React component will mount here -->
+    <div class="ai-search-fallback" style="text-align: center; padding: 20px;">
+      <p>Loading AI Search...</p>
+    </div>
   </div>
 </div>
-
-<script>
-  window.AISearchConfig = {
-    shopUrl: {{ shop.secure_url | json }},
-    appProxyUrl: "/apps/xpertsearch",
-    enabled: true,
-    searchBarSelector: ".ai-search-input",
-    resultsLimit: {{ block.settings.max_results | default: 10 }},
-    showSuggestions: {{ block.settings.show_suggestions | default: true | json }}
-  };
-</script>
-<script src="{{ 'main.js' | asset_url }}" defer></script>
-<link rel="stylesheet" href="{{ 'main.css' | asset_url }}">
 
 {% schema %}
 {
   "name": "AI Search",
   "target": "section",
+  "stylesheet": "main.css",
+  "javascript": "main.js",
   "settings": [
     {
-      "type": "paragraph",
-      "content": "Add AI-powered search with instant product results. Replace your theme's existing search with this enhanced version."
-    },
-    {
-      "type": "text",
-      "id": "placeholder_text",
-      "label": "Search placeholder text",
-      "default": "Search for products...",
-      "info": "The text shown in the search input when empty"
+      "type": "select",
+      "id": "display_mode",
+      "label": "Display Mode",
+      "options": [
+        {
+          "value": "bar",
+          "label": "Search Bar"
+        },
+        {
+          "value": "button",
+          "label": "Search Button"
+        }
+      ],
+      "default": "bar",
+      "info": "Choose how the search widget appears on your store"
     },
     {
       "type": "range",
       "id": "max_results",
-      "label": "Maximum results to show",
       "min": 5,
       "max": 20,
       "step": 1,
+      "label": "Maximum Results",
       "default": 10,
-      "info": "How many products to display in the instant results"
+      "info": "Number of products to show in search results"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_text",
+      "label": "Placeholder Text",
+      "default": "Search for products...",
+      "info": "Text shown when the search field is empty"
     },
     {
       "type": "checkbox",
       "id": "show_suggestions",
-      "label": "Show search suggestions",
+      "label": "Show Search Suggestions",
       "default": true,
       "info": "Display helpful search suggestions to users"
     }

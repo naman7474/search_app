@@ -25,7 +25,7 @@ const buildOptions = {
     'process.env.NODE_ENV': '"production"'
   },
   minify: process.env.NODE_ENV === 'production',
-  sourcemap: process.env.NODE_ENV !== 'production',
+  sourcemap: false, // Disabled for Shopify theme extensions
   target: ['es2015'],
   external: [], // Bundle everything including React
   banner: {

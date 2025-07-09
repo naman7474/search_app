@@ -1,0 +1,148 @@
+<!-- AI Search - Can be included anywhere in your theme -->
+{% comment %}
+  Usage: {% render 'ai-search-anywhere', display_mode: 'bar', max_results: 10 %}
+  
+  Parameters:
+  - display_mode: 'bar' or 'button' (default: 'bar')
+  - max_results: Number of results to show (default: 10)
+  - placeholder_text: Custom placeholder text (default: 'Search for products...')
+  - show_suggestions: true/false (default: true)
+  - class: Additional CSS classes to apply
+{% endcomment %}
+
+{% assign display_mode = display_mode | default: 'bar' %}
+{% assign max_results = max_results | default: 10 %}
+{% assign placeholder_text = placeholder_text | default: 'Search for products...' %}
+{% assign show_suggestions = show_suggestions | default: true %}
+{% assign widget_class = class | default: '' %}
+
+<div class="ai-search-widget {{ widget_class }}" style="width: 100%;">
+  <div id="ai-search-root-{{ 'now' | date: '%s' }}{{ forloop.index | default: 'main' }}" 
+       data-shop-url="{{ shop.secure_url }}" 
+       data-app-proxy-url="/apps/xpertsearch"
+       data-display-mode="{{ display_mode }}"
+       data-results-limit="{{ max_results }}"
+       data-show-suggestions="{{ show_suggestions }}"
+       data-placeholder="{{ placeholder_text }}">
+    <!-- Fallback loading message -->
+    <div class="ai-search-fallback" style="text-align: center; padding: 20px; border: 2px dashed #ddd; border-radius: 8px; background: #f9f9f9;">
+      <p style="margin: 0; color: #666;">Loading AI Search...</p>
+      <small style="color: #999;">If this message persists, please check your theme setup</small>
+    </div>
+  </div>
+</div>
+
+<!-- Load CSS and JS only once per page -->
+{% capture ai_search_assets %}
+  <link rel="stylesheet" href="{{ 'theme-compatibility.css' | asset_url }}">
+  <link rel="stylesheet" href="{{ 'main.css' | asset_url }}">
+  
+  <script>
+    // Enhanced initialization for multiple instances
+    (function() {
+      'use strict';
+      
+      function initializeAISearch() {
+        // Find all AI search roots that haven't been initialized
+        const roots = document.querySelectorAll('[id^="ai-search-root-"]:not([data-initialized])');
+        
+        roots.forEach(function(root) {
+          if (!root) return;
+          
+          console.log('Initializing AI Search instance:', root.id);
+          
+          // Mark as initialized
+          root.setAttribute('data-initialized', 'true');
+          
+          // Get configuration from data attributes
+          const config = {
+            shopUrl: root.dataset.shopUrl || '',
+            appProxyUrl: root.dataset.appProxyUrl || '/apps/xpertsearch',
+            displayMode: root.dataset.displayMode || 'bar',
+            resultsLimit: parseInt(root.dataset.resultsLimit || '10', 10),
+            placeholderText: root.dataset.placeholder || 'Search for products...',
+            showSuggestions: root.dataset.showSuggestions === 'true'
+          };
+          
+          // Initialize the search widget
+          initWidget(root, config);
+        });
+      }
+      
+      function initWidget(container, config) {
+        const { displayMode, placeholderText } = config;
+        const SEARCH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+        
+        container.innerHTML = `
+          <div class="ai-search-container ${displayMode === 'button' ? 'button-mode' : 'bar-mode'}">
+            ${displayMode === 'button' 
+              ? `<button class="ai-search-button" type="button" aria-label="Open search">
+                   ${SEARCH_ICON}
+                   <span class="button-text">Search</span>
+                 </button>`
+              : `<div class="search-input-wrapper">
+                   <input type="text" class="ai-search-input" placeholder="${placeholderText}" aria-label="Search products" readonly>
+                   <button class="search-icon-button" type="button" aria-label="Open search">
+                     ${SEARCH_ICON}
+                   </button>
+                 </div>`
+            }
+          </div>
+        `;
+        
+        // Add click handler to open modal
+        const button = container.querySelector('.ai-search-button, .ai-search-input, .search-icon-button');
+        if (button) {
+          button.addEventListener('click', function() {
+            openSearchModal(config);
+          });
+        }
+      }
+      
+      function openSearchModal(config) {
+        // Check if modal already exists
+        if (document.querySelector('.ai-search-modal-overlay')) {
+          return;
+        }
+        
+        // Load the main script if not already loaded
+        if (typeof window.openAISearchModal === 'function') {
+          window.openAISearchModal(config);
+        } else {
+          loadMainScript(function() {
+            if (typeof window.openAISearchModal === 'function') {
+              window.openAISearchModal(config);
+            }
+          });
+        }
+      }
+      
+      function loadMainScript(callback) {
+        const script = document.createElement('script');
+        script.src = '{{ "main.js" | asset_url }}';
+        script.async = true;
+        script.onload = callback;
+        script.onerror = function() {
+          console.error('Failed to load AI Search main script');
+        };
+        document.head.appendChild(script);
+      }
+      
+      // Initialize when DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeAISearch);
+      } else {
+        initializeAISearch();
+      }
+      
+      // Re-initialize after AJAX loads (for themes with dynamic content)
+      document.addEventListener('shopify:section:load', initializeAISearch);
+    })();
+  </script>
+{% endcapture %}
+
+{% unless content_for_header contains 'ai-search-assets-loaded' %}
+  {% assign header_marker = '<meta name="ai-search-assets-loaded" content="true">' %}
+  {% assign content_for_header = content_for_header | append: header_marker %}
+  {{ ai_search_assets }}
+{% endunless %} 

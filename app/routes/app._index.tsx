@@ -74,6 +74,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
   
+  if (action === "visual-search") {
+    try {
+      // Visual search action would be handled by the visual search API endpoint
+      // This is just a placeholder for admin interface integration
+      return json({
+        success: true,
+        message: "Visual search functionality is available in the storefront extension",
+      });
+    } catch (error) {
+      console.error("Visual search error:", error);
+      return json({
+        success: false,
+        error: "Visual search failed",
+        message: error instanceof Error ? error.message : "Unknown error",
+      }, { status: 500 });
+    }
+  }
+  
   return json({ success: false, error: "Invalid action" }, { status: 400 });
 };
 

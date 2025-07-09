@@ -3,7 +3,7 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://media-dancing-asn-monroe.trycloudflare.com"
+application_url = "https://missouri-victorian-premiere-close.trycloudflare.com"
 embedded = true
 
 [webhooks]
@@ -35,13 +35,13 @@ scopes = "write_products,read_products,read_product_listings"
 
 [auth]
 redirect_urls = [
-  "https://media-dancing-asn-monroe.trycloudflare.com/auth/callback",
-  "https://media-dancing-asn-monroe.trycloudflare.com/auth/shopify/callback",
-  "https://media-dancing-asn-monroe.trycloudflare.com/api/auth/callback"
+  "https://missouri-victorian-premiere-close.trycloudflare.com/auth/callback",
+  "https://missouri-victorian-premiere-close.trycloudflare.com/auth/shopify/callback",
+  "https://missouri-victorian-premiere-close.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://media-dancing-asn-monroe.trycloudflare.com"
+url = "https://missouri-victorian-premiere-close.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 
