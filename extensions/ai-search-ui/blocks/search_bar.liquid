@@ -24,6 +24,28 @@
       {{ block.settings.button_text | default: 'Search' }}
     </button>
     
+  {% elsif block.settings.display_mode == 'icon-button' %}
+    <!-- Small Square Icon Button -->
+    <button class="ai-search-icon-btn" 
+            data-block-id="{{ block.id }}"
+            data-shop-domain="{{ shop.permanent_domain }}"
+            data-max-results="{{ block.settings.max_results | default: 10 }}"
+            data-placeholder="{{ block.settings.placeholder_text | default: 'Search for products...' }}"
+            aria-label="Search"
+            title="Search"
+            style="
+              --button-color: {{ block.settings.button_color | default: '#333' }};
+              --button-text-color: {{ block.settings.button_text_color | default: '#fff' }};
+              --button-hover-color: {{ block.settings.button_hover_color | default: '#555' }};
+              --border-radius: {{ block.settings.border_radius | default: '4px' }};
+              --icon-size: {{ block.settings.icon_size | default: '20px' }};
+            ">
+      
+      <svg width="{{ block.settings.icon_size | default: '20' }}" height="{{ block.settings.icon_size | default: '20' }}" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+      </svg>
+    </button>
+    
   {% else %}
     <!-- Search Input (Fake - Opens Modal) -->
     <div class="ai-search-input-wrapper"
@@ -75,6 +97,7 @@
       "label": "Display Mode",
       "options": [
         { "value": "button", "label": "Search Button" },
+        { "value": "icon-button", "label": "Small Square Icon" },
         { "value": "input", "label": "Search Input" }
       ],
       "default": "button"
@@ -121,6 +144,19 @@
       "id": "button_hover_color",
       "label": "Button Hover Color",
       "default": "#555555"
+    },
+    {
+      "type": "select",
+      "id": "icon_size",
+      "label": "Icon Size (for Square Icon)",
+      "options": [
+        { "value": "16px", "label": "Small (16px)" },
+        { "value": "20px", "label": "Medium (20px)" },
+        { "value": "24px", "label": "Large (24px)" },
+        { "value": "28px", "label": "Extra Large (28px)" }
+      ],
+      "default": "20px",
+      "info": "Only applies to Small Square Icon mode"
     },
     {
       "type": "header",

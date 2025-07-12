@@ -3,14 +3,7 @@
 
   let currentModal = null;
   let currentTimeout = null;
-  const SEARCH_DELAY = 3000; // 3 seconds delay
-
-  // Utility function to escape HTML
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  const SEARCH_DELAY = 3000; // Reduced delay for better UX on redirect
 
   function createModal() {
     const modal = document.createElement('div');
@@ -26,9 +19,9 @@
             <input type="text" class="ai-search-modal-input" placeholder="Search for products..." autofocus>
             <button class="ai-search-submit-btn" type="button">Search</button>
           </div>
-        </div>
-        <div class="ai-search-content">
-          <!-- Results will be inserted here -->
+          <div class="ai-search-hint">
+            Press Enter or click Search to find products
+          </div>
         </div>
       </div>
     `;
@@ -36,108 +29,18 @@
     return modal;
   }
 
-  function showLoading(modal) {
-    const content = modal.querySelector('.ai-search-content');
-    content.innerHTML = `
-      <div class="ai-search-loading">
-        <div class="ai-search-loading-text">Searching...</div>
-      </div>
-    `;
-  }
-
-  function showError(modal, message = 'Search failed. Please try again.') {
-    const content = modal.querySelector('.ai-search-content');
-    content.innerHTML = `
-      <div class="ai-search-error">
-        ${message}
-      </div>
-    `;
-  }
-
-  function displayResults(modal, results) {
-    const content = modal.querySelector('.ai-search-content');
-    
-    if (!results || results.length === 0) {
-      content.innerHTML = `
-        <div class="ai-search-no-results">
-          No products found. Try searching with different keywords.
-        </div>
-      `;
-      return;
-    }
-
-    const resultsHTML = results.map(product => {
-      const imageUrl = product.image_url || product.featured_image || '';
-      const price = product.price_min ? `$${product.price_min.toFixed(2)}` : '';
-      const explanation = product.ai_explanation || '';
-      const handle = product.handle || '';
-      const productUrl = handle ? `/products/${handle}` : '#';
-      
-      return `
-        <div class="ai-search-product" data-product-url="${productUrl}">
-          ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(product.title)}" class="ai-search-product-image">` : ''}
-          <div class="ai-search-product-info">
-            <div class="ai-search-product-title">${escapeHtml(product.title || '')}</div>
-            ${price ? `<div class="ai-search-product-price">${price}</div>` : ''}
-            ${explanation ? `<div class="ai-search-product-explanation">${escapeHtml(explanation)}</div>` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    content.innerHTML = `
-      <div class="ai-search-results">
-        ${resultsHTML}
-      </div>
-    `;
-
-    // Add click handlers to products
-    content.querySelectorAll('.ai-search-product').forEach(product => {
-      product.addEventListener('click', function() {
-        const url = this.getAttribute('data-product-url');
-        if (url && url !== '#') {
-          window.location.href = url;
-        }
-      });
-    });
-  }
-
-  async function performSearch(query, modal) {
+  function redirectToSearch(query) {
     if (!query.trim()) return;
 
-    showLoading(modal);
-
-    try {
-      const shopDomain = window.location.hostname;
-      const searchUrl = `/apps/xpertsearch/api/search?q=${encodeURIComponent(query)}&shop=${shopDomain}`;
-      
-      const response = await fetch(searchUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      // Debug logging to see actual response
-      console.log('AI Search Response:', data);
-      console.log('Products found:', data?.data?.products?.length || 0);
-      
-      if (data.success && data.data && data.data.products && Array.isArray(data.data.products)) {
-        displayResults(modal, data.data.products);
-      } else {
-        console.log('No products found or invalid response structure', data);
-        showError(modal, data.error || 'No products found matching your search.');
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      showError(modal);
-    }
+    // Close modal first for smooth transition
+    closeModal();
+    
+    // Redirect to the dedicated search results page
+    const shopDomain = window.location.hostname;
+    const searchUrl = `/apps/xpertsearch/search?q=${encodeURIComponent(query.trim())}&shop=${shopDomain}`;
+    
+    // Use window.location.href for better compatibility across all browsers
+    window.location.href = searchUrl;
   }
 
   function openModal(initialQuery = '') {
@@ -156,7 +59,9 @@
     // Set initial query if provided
     if (initialQuery) {
       input.value = initialQuery;
-      performSearch(initialQuery, currentModal);
+      // If there's an initial query, redirect immediately
+      setTimeout(() => redirectToSearch(initialQuery), 100);
+      return;
     }
 
     // Event listeners
@@ -168,28 +73,31 @@
     });
 
     submitBtn.addEventListener('click', function() {
-      performSearch(input.value, currentModal);
+      redirectToSearch(input.value);
     });
 
     input.addEventListener('keypress', function(e) {
       if (e.key === 'Enter') {
-        performSearch(input.value, currentModal);
+        redirectToSearch(input.value);
       }
     });
 
-    // Debounced search on input (only after 3 seconds of no typing)
+    // Optional: Auto-redirect after user stops typing (disabled by default)
+    // Uncomment the following lines if you want auto-redirect behavior
+    /*
     input.addEventListener('input', function() {
       if (currentTimeout) {
         clearTimeout(currentTimeout);
       }
       
       const query = input.value.trim();
-      if (query.length > 0) {
+      if (query.length > 2) { // Only auto-search for queries longer than 2 characters
         currentTimeout = setTimeout(() => {
-          performSearch(query, currentModal);
+          redirectToSearch(query);
         }, SEARCH_DELAY);
       }
     });
+    */
 
     // Escape key to close
     document.addEventListener('keydown', handleEscapeKey);
@@ -235,6 +143,15 @@
       });
     });
 
+    // Handle icon button triggers
+    document.querySelectorAll('.ai-search-icon-btn').forEach(button => {
+      button.addEventListener('click', function() {
+        const blockId = this.getAttribute('data-block-id');
+        const placeholder = this.getAttribute('data-placeholder');
+        openModal('');
+      });
+    });
+
     // Handle input triggers (fake inputs that open modal)
     document.querySelectorAll('.ai-search-input').forEach(input => {
       input.addEventListener('click', function() {
@@ -263,9 +180,9 @@
       if (mutation.type === 'childList') {
         mutation.addedNodes.forEach(function(node) {
           if (node.nodeType === 1) { // Element node
-            if (node.classList && (node.classList.contains('ai-search-trigger-btn') || node.classList.contains('ai-search-input'))) {
+            if (node.classList && (node.classList.contains('ai-search-trigger-btn') || node.classList.contains('ai-search-icon-btn') || node.classList.contains('ai-search-input'))) {
               initializeTriggers();
-            } else if (node.querySelector && (node.querySelector('.ai-search-trigger-btn') || node.querySelector('.ai-search-input'))) {
+            } else if (node.querySelector && (node.querySelector('.ai-search-trigger-btn') || node.querySelector('.ai-search-icon-btn') || node.querySelector('.ai-search-input'))) {
               initializeTriggers();
             }
           }

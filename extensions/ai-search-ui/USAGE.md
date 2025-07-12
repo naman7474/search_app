@@ -6,6 +6,13 @@ The AI Search component can be used in two ways:
 1. **As a Theme Block** (limited to sections only)
 2. **As a Snippet** (can be placed anywhere in your theme)
 
+## Display Modes
+The search widget supports three display modes:
+
+1. **Search Button** - A standard button with text and icon
+2. **Small Square Icon** - A compact square button with just the search icon (perfect for headers)
+3. **Search Input** - A text input field that opens the search modal when clicked
+
 ## Method 1: Theme Block (Section Only)
 This is the standard way to add the search component to your theme sections.
 

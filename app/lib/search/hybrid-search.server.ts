@@ -60,7 +60,7 @@ async function performVectorSearch(request: HybridSearchRequest): Promise<Produc
     // Generate embedding for the query
     const embeddingResult = await generateQueryEmbedding(request.query);
     
-    // Build base query
+    // Build base query with variant data
     let query = supabase
       .from('products')
       .select(`
@@ -75,7 +75,14 @@ async function performVectorSearch(request: HybridSearchRequest): Promise<Produc
         available,
         tags,
         image_url,
-        handle
+        handle,
+        product_variants (
+          id,
+          price,
+          compare_at_price,
+          available,
+          inventory_quantity
+        )
       `)
       .eq('shop_domain', request.shopDomain);
     
@@ -118,28 +125,44 @@ async function performVectorSearch(request: HybridSearchRequest): Promise<Produc
       });
     
     if (vectorError || !vectorResults) {
-      // Return filtered products without scores
+      // Return filtered products without scores, enriched with variant data
       return products.map(product => ({
         ...product,
         similarity_score: 0.5,
+        // Calculate sale status from variants
+        on_sale: product.product_variants?.some((v: any) => 
+          v.compare_at_price && v.compare_at_price > v.price
+        ) || false,
+        // Get price range from variants
+        price_range: calculatePriceRange(product.product_variants || []),
       }));
     }
     
-    return vectorResults.map((product: any) => ({
-      id: product.id,
-      shopify_product_id: product.shopify_product_id,
-      title: product.title,
-      description: product.description,
-      price_min: product.price_min,
-      price_max: product.price_max,
-      vendor: product.vendor,
-      product_type: product.product_type,
-      tags: product.tags,
-      available: product.available,
-      image_url: product.image_url,
-      handle: product.handle,
-      similarity_score: product.similarity || 0.5,
-    }));
+    // Merge vector results with variant data
+    return vectorResults.map((product: any) => {
+      const fullProduct = products.find(p => p.shopify_product_id === product.shopify_product_id);
+      return {
+        id: product.id,
+        shopify_product_id: product.shopify_product_id,
+        title: product.title,
+        description: product.description,
+        price_min: product.price_min,
+        price_max: product.price_max,
+        vendor: product.vendor,
+        product_type: product.product_type,
+        tags: product.tags,
+        available: product.available,
+        image_url: product.image_url,
+        handle: product.handle,
+        similarity_score: product.similarity || 0.5,
+        // Add rich variant data
+        product_variants: fullProduct?.product_variants || [],
+        on_sale: fullProduct?.product_variants?.some((v: any) => 
+          v.compare_at_price && v.compare_at_price > v.price
+        ) || false,
+        price_range: calculatePriceRange(fullProduct?.product_variants || []),
+      };
+    });
   } catch (error) {
     console.error('Vector search failed:', error);
     return [];
@@ -151,10 +174,19 @@ async function performVectorSearch(request: HybridSearchRequest): Promise<Produc
  */
 async function performKeywordSearch(request: HybridSearchRequest): Promise<ProductCandidate[]> {
   try {
-    // Build query with keyword matching
+    // Build query with keyword matching and variant data
     let query = supabase
       .from('products')
-      .select('*')
+      .select(`
+        *,
+        product_variants (
+          id,
+          price,
+          compare_at_price,
+          available,
+          inventory_quantity
+        )
+      `)
       .eq('shop_domain', request.shopDomain);
     
     // Add keyword search conditions
@@ -192,7 +224,7 @@ async function performKeywordSearch(request: HybridSearchRequest): Promise<Produ
       return [];
     }
     
-    // Calculate relevance scores based on keyword matches
+    // Calculate relevance scores based on keyword matches and enrich with variant data
     return data.map(product => {
       let score = 0.3; // Base score for keyword matches
       
@@ -224,6 +256,12 @@ async function performKeywordSearch(request: HybridSearchRequest): Promise<Produ
         image_url: product.image_url,
         handle: product.handle,
         similarity_score: Math.min(score, 1), // Cap at 1
+        // Add rich variant data
+        product_variants: product.product_variants || [],
+        on_sale: product.product_variants?.some((v: any) => 
+          v.compare_at_price && v.compare_at_price > v.price
+        ) || false,
+        price_range: calculatePriceRange(product.product_variants || []),
       };
     });
   } catch (error) {
@@ -274,6 +312,33 @@ function reciprocalRankFusion(
       ...product,
       similarity_score: score, // Use RRF score as similarity score
     }));
+}
+
+/**
+ * Helper function to calculate price range from variants
+ */
+function calculatePriceRange(variants: any[]): { min: number; max: number; sale_min?: number; sale_max?: number } | null {
+  if (!variants || variants.length === 0) return null;
+  
+  const prices = variants.map(v => v.price).filter(p => p !== null && p !== undefined);
+  const comparePrices = variants
+    .filter(v => v.compare_at_price && v.compare_at_price > v.price)
+    .map(v => v.compare_at_price);
+  
+  if (prices.length === 0) return null;
+  
+  const result = {
+    min: Math.min(...prices),
+    max: Math.max(...prices),
+  };
+  
+  // Add original prices if on sale
+  if (comparePrices.length > 0) {
+    (result as any).sale_min = Math.min(...comparePrices);
+    (result as any).sale_max = Math.max(...comparePrices);
+  }
+  
+  return result;
 }
 
 /**
