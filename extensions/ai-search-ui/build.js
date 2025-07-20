@@ -75,15 +75,27 @@ async function build() {
       define: {
         'process.env.NODE_ENV': '"production"'
       },
-      banner: {
-        js: `
-          // AI Search UI Extension - Auto-generated bundle
-          // React and ReactDOM are expected to be loaded externally
-          if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
-            console.error('AI Search: React and ReactDOM must be loaded before this script');
-          }
-        `
-      }
+              banner: {
+          js: `
+            // AI Search UI Extension - Auto-generated bundle v${Date.now()}
+            // React and ReactDOM are expected to be loaded externally
+            if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+              console.error('AI Search: React and ReactDOM must be loaded before this script');
+            }
+            
+            // Clear old caches on script load
+            if (typeof window !== 'undefined' && 'caches' in window) {
+              window.caches.keys().then(function(cacheNames) {
+                cacheNames.forEach(function(cacheName) {
+                  if (cacheName.includes('ai-search-v1')) {
+                    console.log('Clearing old AI search cache:', cacheName);
+                    window.caches.delete(cacheName);
+                  }
+                });
+              });
+            }
+          `
+        }
     });
 
     // Clean up temp file

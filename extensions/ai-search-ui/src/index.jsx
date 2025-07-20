@@ -443,7 +443,7 @@ const styles = `
   /* Products Grid */
   .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(2, 1fr); /* 2x2 grid on desktop */
     gap: 20px;
   }
 
@@ -497,6 +497,35 @@ const styles = `
     height: 100%;
     object-fit: cover;
     transition: transform var(--transition-slow);
+  }
+
+  .product-image-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .placeholder-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+
+  .product-image-placeholder span {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
   .product-card:hover .product-image {
@@ -814,7 +843,7 @@ const styles = `
     }
 
     .products-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr); /* Keep 2x2 grid even on mobile */
     }
 
     .message-content {
@@ -892,6 +921,12 @@ const UnifiedSearch = ({ shopUrl, appProxyUrl, onProductClick, formatPrice, onCl
 
       if (data.success && data.data && data.data.products) {
         console.log('Setting products:', data.data.products);
+        
+        // Debug image URLs
+        data.data.products.forEach((product, index) => {
+          console.log(`Product ${index}: ${product.title}, Image URL: ${product.image_url || 'NO IMAGE'}`);
+        });
+        
         setProducts(data.data.products);
         // Initialize context for chat
         setContext({
@@ -1094,15 +1129,32 @@ const UnifiedSearch = ({ shopUrl, appProxyUrl, onProductClick, formatPrice, onCl
                 className="product-card"
                 onClick={() => onProductClick(product)}
               >
-                {product.image_url && (
-                  <div className="product-image-container">
+                <div className="product-image-container">
+                  {product.image_url ? (
                     <img 
                       src={product.image_url} 
                       alt={product.title}
                       className="product-image"
+                      onError={(e) => {
+                        console.log(`Failed to load image for ${product.title}:`, product.image_url);
+                        e.target.style.display = 'none';
+                        e.target.nextElementSibling.style.display = 'flex';
+                      }}
+                      onLoad={(e) => {
+                        console.log(`Successfully loaded image for ${product.title}`);
+                      }}
                     />
+                  ) : null}
+                  <div 
+                    className="product-image-placeholder" 
+                    style={{ display: product.image_url ? 'none' : 'flex' }}
+                  >
+                    <svg viewBox="0 0 24 24" className="placeholder-icon">
+                      <path fill="currentColor" d="M21,19V5C21,3.89 20.1,3 19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19M19,19H5V5H19V19M13.96,12.29L11.21,15.83L9.25,13.47L6.5,17H17.5L13.96,12.29Z" />
+                    </svg>
+                    <span>No Image</span>
                   </div>
-                )}
+                </div>
                 <div className="product-info">
                   <h5 className="product-title">{product.title}</h5>
                   {product.vendor && (
@@ -1276,9 +1328,19 @@ const AISearchApp = () => {
     
     // Try to get shop currency from Shopify
     const currency = window.Shopify?.currency?.active || 'USD';
-    const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '$';
     
-    return `${currencySymbol}${price.toFixed(2)}`;
+    try {
+      // Use Intl.NumberFormat for proper currency formatting
+      const formatter = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+      });
+      return formatter.format(price);
+    } catch (error) {
+      // Fallback to simple formatting if currency is not supported
+      const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '$';
+      return `${currencySymbol}${price.toFixed(2)}`;
+    }
   };
 
   // Handle input change (for external input only)
@@ -1375,6 +1437,18 @@ function initializeApp() {
   } else {
     console.error('AI Search container element not found');
   }
+}
+
+// Clear old browser caches before initializing app
+if ('caches' in window) {
+  caches.keys().then(function(cacheNames) {
+    cacheNames.forEach(function(cacheName) {
+      if (cacheName.includes('ai-search-v1') || cacheName.includes('search-page')) {
+        console.log('Clearing old search cache:', cacheName);
+        caches.delete(cacheName);
+      }
+    });
+  });
 }
 
 // Initialize when DOM is ready

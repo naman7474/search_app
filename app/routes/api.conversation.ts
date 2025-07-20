@@ -2,6 +2,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { ConversationalSearchEngine, type Message, type ConversationContext } from "../lib/ai/conversation.server";
+import { 
+  checkConversationAccess, 
+  recordFeatureUsage,
+  createBillingErrorResponse 
+} from "../lib/billing/billing-middleware.server";
 
 // Initialize the conversational search engine
 const conversationEngine = new ConversationalSearchEngine();
@@ -27,6 +32,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         error: "Missing required parameters: messages (array) and shop_domain" 
       }, { status: 400 });
     }
+
+    // Check billing access for conversations
+    const conversationAccess = await checkConversationAccess(shop_domain);
+    
+    if (!conversationAccess.allowed) {
+      return createBillingErrorResponse(conversationAccess, 'conversations');
+    }
     
     // Validate message format
     const validMessages = messages.every((msg: any) => 
@@ -48,6 +60,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       shop_domain,
       context as ConversationContext | undefined
     );
+
+    // Record usage for successful conversation
+    recordFeatureUsage(shop_domain, 'conversation_message', 1).catch(console.error);
     
     return json({
       success: true,

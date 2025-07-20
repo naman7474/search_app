@@ -34,11 +34,12 @@ export class SearchCache {
   async get(
     query: string,
     shopDomain: string,
+    filters?: Record<string, any>
   ): Promise<SearchResult | null> {
     const redis = await this.getClient();
     if (!redis) return null;
 
-    const key = this.generateKey(query, shopDomain);
+    const key = this.generateKey(query, shopDomain, filters);
     const cached = await redis.get(key);
 
     if (cached) {
@@ -49,11 +50,16 @@ export class SearchCache {
     return null;
   }
 
-  async set(query: string, shopDomain: string, results: SearchResult) {
+  async set(
+    query: string, 
+    shopDomain: string, 
+    results: SearchResult,
+    filters?: Record<string, any>
+  ) {
     const redis = await this.getClient();
     if (!redis) return;
 
-    const key = this.generateKey(query, shopDomain);
+    const key = this.generateKey(query, shopDomain, filters);
     await redis.setEx(key, this.TTL, JSON.stringify(results));
   }
 
@@ -84,9 +90,18 @@ export class SearchCache {
     }
   }
 
-  private generateKey(query: string, shopDomain: string): string {
+  private generateKey(
+    query: string, 
+    shopDomain: string,
+    filters?: Record<string, any>
+  ): string {
+    const keyData = {
+      query: query.toLowerCase(),
+      filters: filters || {}
+    };
+    
     return `search:${shopDomain}:${createHash("md5")
-      .update(query.toLowerCase())
+      .update(JSON.stringify(keyData))
       .digest("hex")}`;
   }
 } 

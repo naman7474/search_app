@@ -100,6 +100,11 @@ const UnifiedSearch: React.FC<UnifiedSearchProps> = ({
       const data = await response.json();
 
       if (data.success && data.data && data.data.products) {
+        // Debug image URLs
+        data.data.products.forEach((product: any, index: number) => {
+          console.log(`Product ${index}: ${product.title}, Image URL: ${product.image_url || 'NO IMAGE'}`);
+        });
+        
         setProducts(data.data.products);
         // Initialize context for chat
         setContext({
@@ -306,15 +311,35 @@ const UnifiedSearch: React.FC<UnifiedSearchProps> = ({
                 className="product-card"
                 onClick={() => onProductClick(product)}
               >
-                {product.image_url && (
-                  <div className="product-image-container">
+                <div className="product-image-container">
+                  {product.image_url ? (
                     <img 
                       src={product.image_url} 
                       alt={product.title}
                       className="product-image"
+                      onError={(e) => {
+                        console.log(`Failed to load image for ${product.title}:`, product.image_url);
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        if (target.nextElementSibling) {
+                          (target.nextElementSibling as HTMLElement).style.display = 'flex';
+                        }
+                      }}
+                      onLoad={() => {
+                        console.log(`Successfully loaded image for ${product.title}`);
+                      }}
                     />
+                  ) : null}
+                  <div 
+                    className="product-image-placeholder" 
+                    style={{ display: product.image_url ? 'none' : 'flex' }}
+                  >
+                    <svg viewBox="0 0 24 24" className="placeholder-icon">
+                      <path fill="currentColor" d="M21,19V5C21,3.89 20.1,3 19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19M19,19H5V5H19V19M13.96,12.29L11.21,15.83L9.25,13.47L6.5,17H17.5L13.96,12.29Z" />
+                    </svg>
+                    <span>No Image</span>
                   </div>
-                )}
+                </div>
                 <div className="product-info">
                   <h5 className="product-title">{product.title}</h5>
                   {product.vendor && (

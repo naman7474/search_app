@@ -1,5 +1,7 @@
 import { supabase } from '../supabase.server';
 import { generateProductEmbedding } from '../ai/embedding.server';
+import { createHash } from 'crypto';
+import { updateSyncProgress } from '../utils/sync-progress.server';
 
 export interface ShopifyProduct {
   id: number;
@@ -37,8 +39,94 @@ export interface IndexingResult {
   products_processed: number;
   products_updated: number;
   products_created: number;
+  products_skipped: number;
   errors: string[];
   processing_time_ms: number;
+}
+
+/**
+ * Generate a hash of important product fields for change detection
+ */
+function generateProductHash(product: ShopifyProduct): string {
+  const hashableData = {
+    title: product.title,
+    body_html: product.body_html,
+    product_type: product.product_type,
+    vendor: product.vendor,
+    tags: product.tags,
+    status: product.status,
+    variants: product.variants.map(v => ({
+      price: v.price,
+      compare_at_price: v.compare_at_price,
+      sku: v.sku,
+      inventory_quantity: v.inventory_quantity,
+      available: v.available
+    })),
+    images: product.images.map(img => img.src),
+    options: product.options
+  };
+  
+  return createHash('sha256')
+    .update(JSON.stringify(hashableData))
+    .digest('hex');
+}
+
+/**
+ * Store raw Shopify product data for audit/debug
+ */
+async function storeRawProductData(
+  product: ShopifyProduct,
+  shopDomain: string
+): Promise<void> {
+  try {
+    const payload = JSON.stringify(product);
+    const payloadHash = generateProductHash(product);
+    
+    await supabase
+      .from('raw_shopify_products')
+      .upsert({
+        shop_domain: shopDomain,
+        shopify_product_id: product.id,
+        payload: payload,
+        payload_hash: payloadHash,
+        fetched_at: new Date().toISOString(),
+      }, {
+        onConflict: 'shop_domain,shopify_product_id',
+        ignoreDuplicates: false
+      });
+      
+  } catch (error) {
+    console.error('Failed to store raw product data:', error);
+    // Don't throw - this is not critical for indexing
+  }
+}
+
+/**
+ * Check if product has changed since last indexing
+ */
+async function hasProductChanged(
+  product: ShopifyProduct,
+  shopDomain: string
+): Promise<boolean> {
+  try {
+    const newHash = generateProductHash(product);
+    
+    const { data: existingRecord } = await supabase
+      .from('raw_shopify_products')
+      .select('payload_hash')
+      .eq('shop_domain', shopDomain)
+      .eq('shopify_product_id', product.id)
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    // If no existing record or hash is different, product has changed
+    return !existingRecord || existingRecord.payload_hash !== newHash;
+    
+  } catch (error) {
+    // If error checking, assume product has changed to be safe
+    return true;
+  }
 }
 
 /**
@@ -47,15 +135,25 @@ export interface IndexingResult {
 export async function indexProduct(
   product: ShopifyProduct,
   shopDomain: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
   try {
     console.log(`📦 Indexing product: ${product.title} (ID: ${product.id})`);
     
     // Skip draft products
     if (product.status !== 'active') {
       console.log(`⏭️ Skipping inactive product: ${product.title}`);
-      return { success: true };
+      return { success: true, skipped: true };
     }
+    
+    // Check if product has changed
+    const changed = await hasProductChanged(product, shopDomain);
+    if (!changed) {
+      console.log(`⏭️ Skipping unchanged product: ${product.title}`);
+      return { success: true, skipped: true };
+    }
+    
+    // Store raw product data
+    await storeRawProductData(product, shopDomain);
     
     // Clean description (remove HTML)
     const cleanDescription = product.body_html
@@ -81,15 +179,20 @@ export async function indexProduct(
     // Check if product is available (has at least one available variant)
     const isAvailable = product.variants.some(v => v.available && v.inventory_quantity > 0);
     
-    // Generate embedding
+    // Generate embedding with timeout
     console.log(`🧠 Generating embedding for: ${product.title}`);
-    const embeddingResult = await generateProductEmbedding({
-      title: product.title,
-      description: cleanDescription,
-      productType: product.product_type,
-      vendor: product.vendor,
-      tags: tags,
-    });
+    const embeddingResult = await Promise.race([
+      generateProductEmbedding({
+        title: product.title,
+        description: cleanDescription,
+        productType: product.product_type,
+        vendor: product.vendor,
+        tags: tags,
+      }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Embedding generation timeout after 30s')), 30000)
+      )
+    ]);
     
     // Prepare product data
     const productData = {
@@ -217,7 +320,7 @@ async function indexProductVariants(
 }
 
 /**
- * Bulk index products from Shopify
+ * Bulk index products from Shopify with improved error handling and batching
  */
 export async function bulkIndexProducts(
   products: ShopifyProduct[],
@@ -229,47 +332,114 @@ export async function bulkIndexProducts(
     products_processed: 0,
     products_updated: 0,
     products_created: 0,
+    products_skipped: 0,
     errors: [],
     processing_time_ms: 0,
   };
   
   console.log(`🚀 Starting bulk indexing of ${products.length} products for ${shopDomain}`);
   
-  for (const product of products) {
-    const indexResult = await indexProduct(product, shopDomain);
-    result.products_processed++;
+  const BATCH_SIZE = 5; // Process in smaller batches to avoid overwhelming the system
+  const MAX_RETRIES = 3;
+  
+  // Process products in batches
+  for (let i = 0; i < products.length; i += BATCH_SIZE) {
+    const batch = products.slice(i, i + BATCH_SIZE);
+    console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(products.length / BATCH_SIZE)} (${batch.length} products)`);
     
-    if (indexResult.success) {
-      // Check if product was created or updated
-      const { data: existingProduct } = await supabase
-        .from('products')
-        .select('created_at, updated_at')
-        .eq('shopify_product_id', product.id)
-        .eq('shop_domain', shopDomain)
-        .single();
-      
-      if (existingProduct) {
-        if (existingProduct.created_at === existingProduct.updated_at) {
-          result.products_created++;
-        } else {
-          result.products_updated++;
+    // Process batch concurrently with error handling
+    const batchPromises = batch.map(async (product) => {
+      let attempts = 0;
+      while (attempts < MAX_RETRIES) {
+        try {
+          const indexResult = await indexProduct(product, shopDomain);
+          result.products_processed++;
+          
+          if (indexResult.success) {
+            if (indexResult.skipped) {
+              result.products_skipped++;
+            } else {
+              // Check if product was created or updated
+              try {
+                const { data: existingProduct } = await supabase
+                  .from('products')
+                  .select('created_at, updated_at')
+                  .eq('shopify_product_id', product.id)
+                  .eq('shop_domain', shopDomain)
+                  .single();
+                
+                if (existingProduct) {
+                  if (existingProduct.created_at === existingProduct.updated_at) {
+                    result.products_created++;
+                  } else {
+                    result.products_updated++;
+                  }
+                }
+              } catch (dbError) {
+                console.warn(`⚠️ Could not check product status for ${product.id}, assuming created`);
+                result.products_created++;
+              }
+            }
+          } else {
+            result.errors.push(`Product ${product.id}: ${indexResult.error}`);
+          }
+          
+          return; // Success, exit retry loop
+          
+        } catch (error) {
+          attempts++;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          
+          if (attempts >= MAX_RETRIES) {
+            console.error(`❌ Failed to index product ${product.id} after ${MAX_RETRIES} attempts:`, errorMessage);
+            result.errors.push(`Product ${product.id}: ${errorMessage}`);
+            result.products_processed++;
+          } else {
+            console.warn(`⚠️ Retrying product ${product.id} (attempt ${attempts}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Progressive delay
+          }
         }
       }
-    } else {
-      result.success = false;
-      result.errors.push(`Product ${product.id}: ${indexResult.error}`);
-    }
+    });
     
-    // Add small delay to avoid rate limiting
-    if (result.products_processed % 10 === 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for batch to complete
+    await Promise.allSettled(batchPromises);
+    
+         // Progress reporting
+     const progress = Math.round((result.products_processed / products.length) * 100);
+     console.log(`📊 Progress: ${result.products_processed}/${products.length} (${progress}%) - Created: ${result.products_created}, Updated: ${result.products_updated}, Skipped: ${result.products_skipped}, Errors: ${result.errors.length}`);
+     
+     // Update sync progress for real-time tracking
+     updateSyncProgress(shopDomain, {
+       processed: result.products_processed,
+       created: result.products_created,
+       updated: result.products_updated,
+       skipped: result.products_skipped,
+       errors: result.errors.length,
+       currentStep: `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(products.length / BATCH_SIZE)}`,
+     });
+    
+    // Add delay between batches to avoid overwhelming the system
+    if (i + BATCH_SIZE < products.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
+  }
+  
+  // Determine overall success
+  const errorRate = result.errors.length / products.length;
+  if (errorRate > 0.1) { // More than 10% errors
+    result.success = false;
+    console.error(`❌ Bulk indexing had high error rate: ${Math.round(errorRate * 100)}%`);
   }
   
   result.processing_time_ms = Date.now() - startTime;
   
   console.log(`✅ Bulk indexing completed in ${result.processing_time_ms}ms`);
-  console.log(`📊 Results: ${result.products_created} created, ${result.products_updated} updated, ${result.errors.length} errors`);
+  console.log(`📊 Final Results: ${result.products_created} created, ${result.products_updated} updated, ${result.products_skipped} skipped, ${result.errors.length} errors`);
+  
+  if (result.errors.length > 0) {
+    console.log('❌ First few errors:', result.errors.slice(0, 5));
+  }
   
   return result;
 }
@@ -395,6 +565,7 @@ export async function reindexAllProducts(shopDomain: string): Promise<IndexingRe
       products_processed: 0,
       products_updated: 0,
       products_created: 0,
+      products_skipped: 0,
       errors: [],
       processing_time_ms: Date.now(),
     };
@@ -414,6 +585,7 @@ export async function reindexAllProducts(shopDomain: string): Promise<IndexingRe
       products_processed: 0,
       products_updated: 0,
       products_created: 0,
+      products_skipped: 0,
       errors: [error instanceof Error ? error.message : 'Unknown error'],
       processing_time_ms: 0,
     };

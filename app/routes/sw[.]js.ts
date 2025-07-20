@@ -3,9 +3,9 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 export async function loader({ request }: LoaderFunctionArgs) {
   // Service Worker for AI Search App
   const serviceWorkerCode = `
-// AI Search Service Worker
-const CACHE_NAME = 'ai-search-v1';
-const SEARCH_CACHE = 'ai-search-data-v1';
+// AI Search Service Worker - Updated cache version to clear old assets
+const CACHE_NAME = 'ai-search-v2-formatted';
+const SEARCH_CACHE = 'ai-search-data-v2';
 
 // Assets to cache for offline functionality
 const STATIC_ASSETS = [

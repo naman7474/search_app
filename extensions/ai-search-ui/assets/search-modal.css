@@ -156,19 +156,74 @@
 .ai-search-modal-input {
   width: 100%;
   padding: var(--input-padding, 12px 16px);
-  padding-right: 80px;
+  padding-right: 140px; /* Increased to accommodate both buttons with more space */
   border: var(--border-width, 1px) solid var(--border-color, #ddd);
   border-radius: var(--border-radius, 4px);
   font-size: var(--font-size, 16px);
   background: var(--background-color, #fff);
   color: var(--text-color, #333);
   font-family: var(--font-family, inherit);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1; /* Base layer for input */
+  min-height: 44px; /* Ensure minimum touch target height */
 }
 
 .ai-search-modal-input:focus {
   outline: none;
   border-color: var(--focus-color, #007cba);
   box-shadow: 0 0 0 1px var(--focus-color, #007cba);
+}
+
+.ai-search-voice-btn {
+  position: absolute;
+  right: 100px; /* Position before search button with more space to match input padding */
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--button-color, #f8f9fa);
+  color: var(--text-color, #666);
+  border: 1px solid var(--border-color, #ddd);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--button-radius, 6px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 2; /* Higher z-index to prevent overlap */
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+.ai-search-voice-btn:hover {
+  background: var(--button-hover-color, #e9ecef);
+  color: var(--text-color, #333);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.ai-search-voice-btn.recording {
+  background: #dc3545;
+  color: white;
+  border-color: #dc3545;
+  animation: pulse 1.5s infinite;
+}
+
+.ai-search-voice-btn.processing {
+  background: var(--focus-color, #007cba);
+  color: white;
+  border-color: var(--focus-color, #007cba);
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+  }
 }
 
 .ai-search-submit-btn {
@@ -179,11 +234,15 @@
   background: var(--button-color, #333);
   color: var(--button-text-color, #fff);
   border: none;
-  padding: 8px 12px;
-  border-radius: var(--button-radius, 3px);
+  padding: 10px 16px;
+  border-radius: var(--button-radius, 6px);
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.2s ease;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  min-width: 70px;
+  z-index: 3; /* Highest z-index for search button */
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .ai-search-submit-btn:hover {
@@ -198,13 +257,124 @@
   font-style: italic;
 }
 
+.ai-search-voice-status {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.ai-search-voice-status.hidden {
+  display: none;
+}
+
+.ai-search-voice-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-color, #666);
+  font-size: 14px;
+}
+
+.ai-search-voice-pulse {
+  width: 12px;
+  height: 12px;
+  background: #dc3545;
+  border-radius: 50%;
+  animation: voice-pulse 1.5s infinite;
+}
+
+@keyframes voice-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 768px) {
   .ai-search-modal-input {
     font-size: 16px; /* Prevent iOS zoom */
+    padding-right: 150px; /* Increased space for both buttons */
+  }
+  
+  .ai-search-voice-btn {
+    right: 95px; /* More space from right edge to prevent overlap */
+    width: 34px;
+    height: 34px;
+  }
+  
+  .ai-search-submit-btn {
+    padding: 8px 12px;
+    min-width: 60px;
+    font-size: 13px;
+    right: 8px; /* Positioning from right edge */
   }
   
   .ai-search-modal-container {
     margin: 10px;
     max-height: calc(100vh - 20px);
+  }
+}
+
+@media (max-width: 480px) {
+  .ai-search-modal-input {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding-right: 140px; /* Increased space for smaller screens */
+    padding-left: 16px; /* Ensure left padding is sufficient */
+  }
+  
+  .ai-search-voice-btn {
+    right: 85px; /* More space to prevent overlap */
+    width: 32px;
+    height: 32px;
+  }
+  
+  .ai-search-submit-btn {
+    padding: 6px 10px;
+    min-width: 52px;
+    font-size: 12px;
+    right: 8px;
+  }
+  
+  .ai-search-modal-container {
+    margin: 5px;
+    max-height: calc(100vh - 10px);
+  }
+  
+  .ai-search-modal-search {
+    padding: 16px; /* Slightly increased padding */
+  }
+}
+
+/* Extra small screens - phones in portrait */
+@media (max-width: 360px) {
+  .ai-search-modal-input {
+    padding-right: 130px; /* Sufficient space for both buttons */
+    font-size: 16px;
+    padding-left: 16px;
+  }
+  
+  .ai-search-voice-btn {
+    right: 75px; /* Adequate spacing from search button */
+    width: 30px;
+    height: 30px;
+  }
+  
+  .ai-search-submit-btn {
+    padding: 5px 8px;
+    min-width: 48px;
+    font-size: 11px;
+    right: 8px;
+  }
+  
+  .ai-search-modal-search {
+    padding: 16px;
   }
 } 

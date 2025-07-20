@@ -7,12 +7,16 @@ export interface HybridSearchRequest {
   query: string;
   shopDomain: string;
   limit: number;
+  offset?: number;
+  sortBy?: 'relevance' | 'price_asc' | 'price_desc' | 'title' | 'newest';
   filters?: Record<string, any>;
 }
 
 export interface HybridSearchResult {
   products: ProductCandidate[];
   method: 'hybrid' | 'vector' | 'keyword';
+  total?: number;
+  hasMore?: boolean;
 }
 
 /**
@@ -20,35 +24,83 @@ export interface HybridSearchResult {
  */
 export async function hybridSearch(request: HybridSearchRequest): Promise<HybridSearchResult> {
   try {
-    // Run both searches in parallel
+    const offset = request.offset || 0;
+    const sortBy = request.sortBy || 'relevance';
+    
+    // Run both searches in parallel (get extra results for better ranking)
     const [vectorResults, keywordResults] = await Promise.all([
-      performVectorSearch(request),
-      performKeywordSearch(request),
+      performVectorSearch({ ...request, limit: request.limit * 3 }),
+      performKeywordSearch({ ...request, limit: request.limit * 3 }),
     ]);
     
     // Use RRF to combine results
-    const fusedResults = reciprocalRankFusion(
+    let fusedResults = reciprocalRankFusion(
       vectorResults,
       keywordResults,
       { k: 60, weights: { vector: 0.7, keyword: 0.3 } }
     );
     
-    // Take top N results
-    const topResults = fusedResults.slice(0, request.limit);
+    // Apply sorting
+    if (sortBy !== 'relevance') {
+      fusedResults = applySorting(fusedResults, sortBy);
+    }
+    
+    // Apply pagination
+    const total = fusedResults.length;
+    const paginatedResults = fusedResults.slice(offset, offset + request.limit);
+    const hasMore = (offset + request.limit) < total;
     
     return {
-      products: topResults,
+      products: paginatedResults,
       method: 'hybrid',
+      total,
+      hasMore,
     };
   } catch (error) {
     console.error('Hybrid search failed, falling back to keyword search:', error);
     
     // Fallback to keyword search
     const keywordResults = await performKeywordSearch(request);
+    const offset = request.offset || 0;
+    const total = keywordResults.length;
+    const paginatedResults = keywordResults.slice(offset, offset + request.limit);
+    
     return {
-      products: keywordResults.slice(0, request.limit),
+      products: paginatedResults,
       method: 'keyword',
+      total,
+      hasMore: (offset + request.limit) < total,
     };
+  }
+}
+
+/**
+ * Apply sorting to search results
+ */
+function applySorting(
+  products: ProductCandidate[], 
+  sortBy: 'price_asc' | 'price_desc' | 'title' | 'newest'
+): ProductCandidate[] {
+  const sorted = [...products];
+  
+  switch (sortBy) {
+    case 'price_asc':
+      return sorted.sort((a, b) => (a.price_min || 0) - (b.price_min || 0));
+      
+    case 'price_desc':
+      return sorted.sort((a, b) => (b.price_max || 0) - (a.price_max || 0));
+      
+    case 'title':
+      return sorted.sort((a, b) => 
+        (a.title || '').localeCompare(b.title || '')
+      );
+      
+    case 'newest':
+      // Would need created_at field - for now, maintain original order
+      return sorted;
+      
+    default:
+      return sorted;
   }
 }
 
@@ -184,18 +236,38 @@ async function performKeywordSearch(request: HybridSearchRequest): Promise<Produ
           price,
           compare_at_price,
           available,
-          inventory_quantity
+          inventory_quantity,
+          sku,
+          title
         )
       `)
       .eq('shop_domain', request.shopDomain);
     
-    // Add keyword search conditions
+    // Add keyword search conditions - expanded to include more fields
     const searchTerms = request.query.toLowerCase().split(/\s+/).filter(Boolean);
-    const orConditions = searchTerms.map(term => 
-      `title.ilike.%${term}%,description.ilike.%${term}%,vendor.ilike.%${term}%,product_type.ilike.%${term}%`
-    ).join(',');
     
-    query = query.or(orConditions);
+    // Build OR conditions for each search term across multiple fields
+    const orConditions: string[] = [];
+    
+    searchTerms.forEach(term => {
+      const conditions = [
+        `title.ilike.%${term}%`,
+        `description.ilike.%${term}%`,
+        `vendor.ilike.%${term}%`,
+        `product_type.ilike.%${term}%`,
+        `handle.ilike.%${term}%`, // Add handle for URL-based searches
+      ];
+      
+      // Add tag matching (tags is an array, so we use contains)
+      conditions.push(`tags.cs.{${term}}`);
+      
+      orConditions.push(conditions.join(','));
+    });
+    
+    // Apply the OR conditions for each term
+    if (orConditions.length > 0) {
+      query = query.or(orConditions.join(','));
+    }
     
     // Apply filters
     if (request.filters?.price_max) {
@@ -231,16 +303,38 @@ async function performKeywordSearch(request: HybridSearchRequest): Promise<Produ
       const titleLower = product.title?.toLowerCase() || '';
       const descriptionLower = product.description?.toLowerCase() || '';
       const vendorLower = product.vendor?.toLowerCase() || '';
+      const productTypeLower = product.product_type?.toLowerCase() || '';
+      const handleLower = product.handle?.toLowerCase() || '';
+      const tagsLower: string[] = (product.tags || []).map((tag) => String(tag).toLowerCase());
+      
+      // Check variant SKUs and titles for matches
+      const variantMatches = product.product_variants?.some((variant: any) => {
+        const skuLower = variant.sku?.toLowerCase() || '';
+        const variantTitleLower = variant.title?.toLowerCase() || '';
+        return searchTerms.some(term => 
+          skuLower.includes(term) || variantTitleLower.includes(term)
+        );
+      });
       
       // Boost score for each matching term
       searchTerms.forEach(term => {
-        if (titleLower.includes(term)) score += 0.2;
-        if (vendorLower.includes(term)) score += 0.1;
+        if (titleLower.includes(term)) score += 0.25; // Highest boost for title matches
+        if (vendorLower.includes(term)) score += 0.15;
+        if (productTypeLower.includes(term)) score += 0.1;
         if (descriptionLower.includes(term)) score += 0.05;
+        if (handleLower.includes(term)) score += 0.1;
+        if (tagsLower.some(tag => tag.includes(term))) score += 0.15;
+        if (variantMatches) score += 0.2; // Good boost for variant matches
       });
       
       // Exact match bonus
       if (titleLower === request.query.toLowerCase()) score += 0.3;
+      
+      // SKU exact match bonus
+      const hasExactSkuMatch = product.product_variants?.some((variant: any) => 
+        variant.sku?.toLowerCase() === request.query.toLowerCase()
+      );
+      if (hasExactSkuMatch) score += 0.5; // High boost for exact SKU match
       
       return {
         id: product.id,

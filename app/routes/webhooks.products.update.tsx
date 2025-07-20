@@ -14,6 +14,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     
     // Transform webhook payload to our ShopifyProduct format
+    // Note: Webhooks still use REST format even with GraphQL Admin API
     const product: ShopifyProduct = {
       id: payload.id,
       title: payload.title,
@@ -23,7 +24,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       vendor: payload.vendor,
       tags: payload.tags,
       status: payload.status,
-      variants: payload.variants.map((variant: any) => ({
+      variants: payload.variants?.map((variant: any) => ({
         id: variant.id,
         title: variant.title,
         price: variant.price,
@@ -33,12 +34,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         inventory_quantity: variant.inventory_quantity || 0,
         available: variant.available || false,
         image_id: variant.image_id,
-      })),
-      images: payload.images.map((image: any) => ({
+      })) || [],
+      images: payload.images?.map((image: any) => ({
         id: image.id,
         src: image.src,
         alt: image.alt,
-      })),
+      })) || [],
       options: payload.options || [],
     };
     
@@ -55,6 +56,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     
   } catch (error) {
     console.error("❌ Product update webhook error:", error);
-    return new Response("Internal Server Error", { status: 500 });
+    
+    // Return 200 even on error to prevent webhook retry storms
+    // Log the error for debugging but don't fail the webhook
+    return new Response("Webhook processed", { status: 200 });
   }
 }; 

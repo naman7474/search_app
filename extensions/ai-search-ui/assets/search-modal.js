@@ -3,7 +3,146 @@
 
   let currentModal = null;
   let currentTimeout = null;
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
   const SEARCH_DELAY = 3000; // Reduced delay for better UX on redirect
+
+  // Voice recording functions
+  async function startVoiceRecording(input, voiceBtn, voiceStatus) {
+    if (isRecording) {
+      stopVoiceRecording();
+      return;
+    }
+
+    try {
+      // Check for browser support
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Voice search is not supported in your browser');
+        return;
+      }
+
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Set up media recorder
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      isRecording = true;
+
+      // Update UI
+      updateVoiceUI(voiceBtn, voiceStatus, 'recording');
+
+      // Handle data available
+      mediaRecorder.ondataavailable = function(event) {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      // Handle recording stop
+      mediaRecorder.onstop = function() {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        transcribeAudio(audioBlob, input, voiceBtn, voiceStatus);
+        
+        // Stop the media stream
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      // Start recording
+      mediaRecorder.start();
+
+      // Auto-stop after 10 seconds
+      setTimeout(() => {
+        if (isRecording) {
+          stopVoiceRecording();
+        }
+      }, 10000);
+
+    } catch (error) {
+      console.error('Error starting voice recording:', error);
+      updateVoiceUI(voiceBtn, voiceStatus, 'error');
+      
+      if (error.name === 'NotAllowedError') {
+        alert('Microphone permission is required for voice search');
+      } else {
+        alert('Could not start voice recording. Please try again.');
+      }
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+    }
+  }
+
+  async function transcribeAudio(audioBlob, input, voiceBtn, voiceStatus) {
+    try {
+      updateVoiceUI(voiceBtn, voiceStatus, 'processing');
+
+      // Create form data
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'voice-search.webm');
+
+      // Send to transcription API
+      const response = await fetch('/apps/xpertsearch/api/voice-transcription', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data.text) {
+        input.value = data.data.text.trim();
+        input.focus();
+        updateVoiceUI(voiceBtn, voiceStatus, 'success');
+        
+        // Auto-search if we got a good transcription
+        if (data.data.text.trim().length > 2) {
+          setTimeout(() => {
+            redirectToSearch(data.data.text.trim());
+          }, 1000);
+        }
+      } else {
+        throw new Error(data.error || 'Transcription failed');
+      }
+
+    } catch (error) {
+      console.error('Error transcribing audio:', error);
+      updateVoiceUI(voiceBtn, voiceStatus, 'error');
+      alert('Could not transcribe audio. Please try typing your search instead.');
+    }
+  }
+
+  function updateVoiceUI(voiceBtn, voiceStatus, state) {
+    const voiceText = voiceStatus.querySelector('.ai-search-voice-text');
+    
+    switch (state) {
+      case 'recording':
+        voiceBtn.classList.add('recording');
+        voiceStatus.classList.remove('hidden');
+        voiceText.textContent = 'Listening... (Click again to stop)';
+        break;
+      case 'processing':
+        voiceBtn.classList.remove('recording');
+        voiceBtn.classList.add('processing');
+        voiceText.textContent = 'Processing...';
+        break;
+      case 'success':
+        voiceBtn.classList.remove('processing');
+        voiceStatus.classList.add('hidden');
+        break;
+      case 'error':
+        voiceBtn.classList.remove('recording', 'processing');
+        voiceStatus.classList.add('hidden');
+        break;
+      default:
+        voiceBtn.classList.remove('recording', 'processing');
+        voiceStatus.classList.add('hidden');
+    }
+  }
 
   function createModal() {
     const modal = document.createElement('div');
@@ -16,11 +155,25 @@
         </div>
         <div class="ai-search-modal-search">
           <div class="ai-search-input-container">
-            <input type="text" class="ai-search-modal-input" placeholder="Search for products..." autofocus>
+            <input type="text" class="ai-search-modal-input" placeholder="Search for products or speak your query..." autofocus>
+            <button class="ai-search-voice-btn" type="button" title="Voice search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
             <button class="ai-search-submit-btn" type="button">Search</button>
           </div>
           <div class="ai-search-hint">
-            Press Enter or click Search to find products
+            Press Enter, click Search, or use voice to find products
+          </div>
+          <div class="ai-search-voice-status hidden">
+            <div class="ai-search-voice-indicator">
+              <div class="ai-search-voice-pulse"></div>
+              <span class="ai-search-voice-text">Listening...</span>
+            </div>
           </div>
         </div>
       </div>
@@ -55,6 +208,8 @@
     const input = currentModal.querySelector('.ai-search-modal-input');
     const submitBtn = currentModal.querySelector('.ai-search-submit-btn');
     const closeBtn = currentModal.querySelector('.ai-search-close-btn');
+    const voiceBtn = currentModal.querySelector('.ai-search-voice-btn');
+    const voiceStatus = currentModal.querySelector('.ai-search-voice-status');
 
     // Set initial query if provided
     if (initialQuery) {
@@ -80,6 +235,11 @@
       if (e.key === 'Enter') {
         redirectToSearch(input.value);
       }
+    });
+
+    // Voice search functionality
+    voiceBtn.addEventListener('click', function() {
+      startVoiceRecording(input, voiceBtn, voiceStatus);
     });
 
     // Optional: Auto-redirect after user stops typing (disabled by default)

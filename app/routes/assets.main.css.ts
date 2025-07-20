@@ -15,12 +15,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Read the CSS file
     const cssContent = fs.readFileSync(cssPath, "utf-8");
 
-    // Return CSS with proper headers
+    // Return CSS with proper headers - reduced cache time to ensure fresh assets
     return new Response(cssContent, {
       status: 200,
       headers: {
         "Content-Type": "text/css",
-        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+        "Cache-Control": "public, max-age=300, must-revalidate", // Cache for 5 minutes and revalidate
+        "ETag": `"${Date.now()}"`, // Add ETag for better cache validation
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET",
         "Access-Control-Allow-Headers": "Content-Type",

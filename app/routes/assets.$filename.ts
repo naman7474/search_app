@@ -55,12 +55,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const ext = path.extname(sanitizedFilename).toLowerCase();
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
-    // Return asset with proper headers
+    // Return asset with proper headers - reduced cache time to ensure fresh assets
     return new Response(assetContent, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+        "Cache-Control": "public, max-age=300, must-revalidate", // Cache for 5 minutes and revalidate
+        "ETag": `"${Date.now()}"`, // Add ETag for better cache validation
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET",
         "Access-Control-Allow-Headers": "Content-Type",

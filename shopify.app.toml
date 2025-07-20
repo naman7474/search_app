@@ -3,7 +3,7 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://screenshots-papers-composition-state.trycloudflare.com"
+application_url = "https://listprice-scary-ld-mall.trycloudflare.com"
 embedded = true
 
 [build]
@@ -35,19 +35,20 @@ api_version = "2025-07"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_product_listings,read_products,write_products,write_app_proxy"
+scopes = "read_product_listings,read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://screenshots-papers-composition-state.trycloudflare.com/auth/callback",
-  "https://screenshots-papers-composition-state.trycloudflare.com/auth/shopify/callback",
-  "https://screenshots-papers-composition-state.trycloudflare.com/api/auth/callback"
+  "https://listprice-scary-ld-mall.trycloudflare.com/auth/callback",
+  "https://listprice-scary-ld-mall.trycloudflare.com/auth/shopify/callback",
+  "https://listprice-scary-ld-mall.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://screenshots-papers-composition-state.trycloudflare.com"
+url = "https://listprice-scary-ld-mall.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 
 [pos]
 embedded = false
+scopes = "read_products,write_products,read_analytics,write_applications_billing"

@@ -33,6 +33,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     
   } catch (error) {
     console.error("❌ Product delete webhook error:", error);
-    return new Response("Internal Server Error", { status: 500 });
+    
+    // Return 200 even on error to prevent webhook retry storms
+    // Log the error for debugging but don't fail the webhook
+    return new Response("Webhook processed", { status: 200 });
   }
 }; 

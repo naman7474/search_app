@@ -1,56 +1,45 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { hybridSearch } from "../lib/search/hybrid-search.server";
+import { unifiedSearchService } from "../lib/search/unified-search.server";
+import { generateFacets } from "../lib/utils/facets.utils";
+import { escapeHtml } from "../lib/utils/html.utils";
 
-// Helper function to generate facets from search results
-function generateFacets(products: any[]): any {
-  const facets = {
-    vendors: new Map<string, number>(),
-    product_types: new Map<string, number>(),
-    availability: { in_stock: 0, out_of_stock: 0 },
-    price_range: { min: Infinity, max: 0 }
+// Using utility function for facet generation
+
+// Utility function to get currency symbol from currency code
+function getCurrencySymbol(currencyCode: string): string {
+  const currencySymbols: Record<string, string> = {
+    'USD': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'CAD': 'C$',
+    'AUD': 'A$',
+    'JPY': '¥',
+    'CHF': 'CHF',
+    'CNY': '¥',
+    'SEK': 'kr',
+    'NOK': 'kr',
+    'DKK': 'kr',
+    'PLN': 'zł',
+    'CZK': 'Kč',
+    'HUF': 'Ft',
+    'RUB': '₽',
+    'BRL': 'R$',
+    'MXN': 'MX$',
+    'NZD': 'NZ$',
+    'SGD': 'S$',
+    'HKD': 'HK$',
+    'TWD': 'NT$',
+    'KRW': '₩',
+    'THB': '฿',
+    'MYR': 'RM',
+    'INR': '₹',
+    'PHP': '₱',
+    'VND': '₫',
+    'IDR': 'Rp',
   };
-
-  products.forEach(product => {
-    // Vendor facets
-    if (product.vendor) {
-      const count = facets.vendors.get(product.vendor) || 0;
-      facets.vendors.set(product.vendor, count + 1);
-    }
-
-    // Product type facets
-    if (product.product_type) {
-      const count = facets.product_types.get(product.product_type) || 0;
-      facets.product_types.set(product.product_type, count + 1);
-    }
-
-    // Availability facets
-    if (product.available) {
-      facets.availability.in_stock++;
-    } else {
-      facets.availability.out_of_stock++;
-    }
-
-    // Price range
-    if (product.price_min) {
-      facets.price_range.min = Math.min(facets.price_range.min, product.price_min);
-      facets.price_range.max = Math.max(facets.price_range.max, product.price_min);
-    }
-  });
-
-  // Convert Maps to sorted arrays
-  return {
-    vendors: Array.from(facets.vendors.entries())
-      .sort((a, b) => b[1] - a[1]) // Sort by count
-      .slice(0, 10), // Limit to top 10
-    product_types: Array.from(facets.product_types.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10),
-    availability: facets.availability,
-    price_range: facets.price_range.min === Infinity 
-      ? { min: 0, max: 0 } 
-      : facets.price_range
-  };
+  
+  return currencySymbols[currencyCode] || currencyCode;
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -84,38 +73,57 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let hasMore = false;
   let searchTime = 0;
   let facets: any = {};
+  let storeCurrency = { code: 'USD', symbol: '$' }; // Default currency
+
+  // Get store currency information
+  try {
+    const storeInfoResponse = await fetch(`${new URL(request.url).origin}/apps/xpertsearch/api/store-info?shop=${encodeURIComponent(shopDomain)}`);
+    if (storeInfoResponse.ok) {
+      const storeInfo = await storeInfoResponse.json();
+      if (storeInfo.success && storeInfo.data.currency) {
+        storeCurrency = {
+          code: storeInfo.data.currency.code,
+          symbol: getCurrencySymbol(storeInfo.data.currency.code),
+        };
+      }
+    }
+  } catch (error) {
+    console.log('Failed to fetch store currency, using default USD');
+  }
 
   if (query.trim()) {
     try {
       const startTime = Date.now();
       
       // First, get all results to generate facets (limited to reasonable amount)
-      const allResultsSearch = await hybridSearch({
+      const allResultsSearch = await unifiedSearchService.search({
         query: query.trim(),
-        shopDomain,
+        shop_domain: shopDomain,
         limit: 200, // Get more results for better facets
-        filters: {} // No filters for facet generation
+        filters: {}, // No filters for facet generation
+        strategy: 'hybrid',
       });
       
       allProducts = allResultsSearch.products;
       
       // Then get filtered and paginated results
-      const filteredSearch = await hybridSearch({
+      const filteredSearch = await unifiedSearchService.search({
         query: query.trim(),
-        shopDomain,
+        shop_domain: shopDomain,
         limit: limit + 1, // Get one extra to check if there are more
-        filters
+        filters,
+        strategy: 'hybrid',
       });
       
       let sortedProducts = filteredSearch.products;
       
       // Apply sorting
       if (sortBy === "price_low") {
-        sortedProducts.sort((a, b) => (a.price_min || 0) - (b.price_min || 0));
+        sortedProducts.sort((a: any, b: any) => (a.price_min || 0) - (b.price_min || 0));
       } else if (sortBy === "price_high") {
-        sortedProducts.sort((a, b) => (b.price_min || 0) - (a.price_min || 0));
+        sortedProducts.sort((a: any, b: any) => (b.price_min || 0) - (a.price_min || 0));
       } else if (sortBy === "title") {
-        sortedProducts.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+        sortedProducts.sort((a: any, b: any) => (a.title || "").localeCompare(b.title || ""));
       }
       // 'relevance' uses default similarity score sorting
       
@@ -133,19 +141,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  // Escape HTML for safe output in Liquid
-  function escapeHtml(text: string | null | undefined): string {
-    if (!text) return '';
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
+  // Using utility function for HTML escaping
 
-  // Generate CSS link to our search page styles
-  const cssUrl = `/apps/xpertsearch/assets/search-page.css`;
+  // Generate CSS and JS links to our search page assets with cache-busting
+  const cacheVersion = Date.now(); // Force fresh assets by adding timestamp
+  const cssUrl = `/apps/xpertsearch/assets/search-page.css?v=${cacheVersion}`;
+  const jsUrl = `/apps/xpertsearch/assets/search-page.js?v=${cacheVersion}`;
   
   // Helper function to build filter URL
   function buildFilterUrl(newFilters: Record<string, string | null>): string {
@@ -176,95 +177,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     </form>
   `;
   
-  // Generate sorting dropdown
-  const sortingDropdown = query ? `
-    <div class="ai-search-sorting">
-      <label for="sort-select" class="ai-search-sort-label">Sort by:</label>
-      <select id="sort-select" class="ai-search-sort-select" onchange="window.location.href='${buildFilterUrl({ sort: '' })}' + '&sort=' + this.value">
-        <option value="relevance" ${sortBy === "relevance" ? "selected" : ""}>Relevance</option>
-        <option value="price_low" ${sortBy === "price_low" ? "selected" : ""}>Price: Low to High</option>
-        <option value="price_high" ${sortBy === "price_high" ? "selected" : ""}>Price: High to Low</option>
-        <option value="title" ${sortBy === "title" ? "selected" : ""}>Name A-Z</option>
-      </select>
-    </div>
-  ` : '';
+  // Sorting dropdown removed to prevent navigation issues
+  const sortingDropdown = '';
   
-  // Generate filtering sidebar for desktop
-  const filtersSidebar = query && Object.keys(facets).length > 0 ? `
-    <aside class="ai-search-filters">
-      <details open>
-        <summary>Filters</summary>
-        
-        ${facets.vendors && facets.vendors.length > 0 ? `
-          <div class="ai-search-filter-group">
-            <h4>Brand</h4>
-            ${facets.vendors.map(([vendorName, count]: [string, number]) => `
-              <label class="ai-search-filter-item">
-                <input type="checkbox" 
-                       onchange="window.location.href='${buildFilterUrl({ vendor: vendor === vendorName ? null : vendorName })}'"
-                       ${vendor === vendorName ? "checked" : ""} />
-                <span>${escapeHtml(vendorName)} (${count})</span>
-              </label>
-            `).join('')}
-          </div>
-        ` : ''}
-        
-        ${facets.product_types && facets.product_types.length > 0 ? `
-          <div class="ai-search-filter-group">
-            <h4>Product Type</h4>
-            ${facets.product_types.map(([typeName, count]: [string, number]) => `
-              <label class="ai-search-filter-item">
-                <input type="checkbox" 
-                       onchange="window.location.href='${buildFilterUrl({ product_type: productType === typeName ? null : typeName })}'"
-                       ${productType === typeName ? "checked" : ""} />
-                <span>${escapeHtml(typeName)} (${count})</span>
-              </label>
-            `).join('')}
-          </div>
-        ` : ''}
-        
-        ${facets.availability && (facets.availability.in_stock > 0 || facets.availability.out_of_stock > 0) ? `
-          <div class="ai-search-filter-group">
-            <h4>Availability</h4>
-            <label class="ai-search-filter-item">
-              <input type="checkbox" 
-                     onchange="window.location.href='${buildFilterUrl({ availability: availability === "in_stock" ? null : "in_stock" })}'"
-                     ${availability === "in_stock" ? "checked" : ""} />
-              <span>In Stock (${facets.availability.in_stock})</span>
-            </label>
-            <label class="ai-search-filter-item">
-              <input type="checkbox" 
-                     onchange="window.location.href='${buildFilterUrl({ availability: availability === "out_of_stock" ? null : "out_of_stock" })}'"
-                     ${availability === "out_of_stock" ? "checked" : ""} />
-              <span>Out of Stock (${facets.availability.out_of_stock})</span>
-            </label>
-          </div>
-        ` : ''}
-        
-        ${facets.price_range && facets.price_range.max > 0 ? `
-          <div class="ai-search-filter-group">
-            <h4>Price Range</h4>
-            <div class="ai-search-price-inputs">
-              <input type="number" 
-                     placeholder="Min" 
-                     value="${priceMin || ''}"
-                     id="price-min" 
-                     class="ai-search-price-input" />
-              <input type="number" 
-                     placeholder="Max" 
-                     value="${priceMax || ''}"
-                     id="price-max" 
-                     class="ai-search-price-input" />
-              <button type="button" onclick="applyPriceFilter()" class="ai-search-apply-price">Apply</button>
-            </div>
-            <div class="ai-search-price-range-info">
-              Range: $${facets.price_range.min.toFixed(2)} - $${facets.price_range.max.toFixed(2)}
-            </div>
-          </div>
-        ` : ''}
-      </details>
-    </aside>
-  ` : '';
+  // Filters sidebar removed to prevent navigation issues
+  const filtersSidebar = '';
 
   // Generate product grid HTML
   let productGridHtml = '';
@@ -286,15 +203,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           if (min === max) {
             priceDisplay = `
               <div class="ai-search-product-price">
-                <span class="ai-search-sale-price">$${min.toFixed(2)}</span>
-                <span class="ai-search-original-price">$${sale_min === sale_max ? sale_min.toFixed(2) : `${sale_min.toFixed(2)} - $${sale_max.toFixed(2)}`}</span>
+                <span class="ai-search-sale-price">${storeCurrency.symbol}${min.toFixed(2)}</span>
+                <span class="ai-search-original-price">${storeCurrency.symbol}${sale_min === sale_max ? sale_min.toFixed(2) : `${sale_min.toFixed(2)} - ${storeCurrency.symbol}${sale_max.toFixed(2)}`}</span>
               </div>
             `;
           } else {
             priceDisplay = `
               <div class="ai-search-product-price">
-                <span class="ai-search-sale-price">$${min.toFixed(2)} - $${max.toFixed(2)}</span>
-                <span class="ai-search-original-price">$${sale_min.toFixed(2)} - $${sale_max.toFixed(2)}</span>
+                <span class="ai-search-sale-price">${storeCurrency.symbol}${min.toFixed(2)} - ${storeCurrency.symbol}${max.toFixed(2)}</span>
+                <span class="ai-search-original-price">${storeCurrency.symbol}${sale_min.toFixed(2)} - ${storeCurrency.symbol}${sale_max.toFixed(2)}</span>
               </div>
             `;
           }
@@ -302,14 +219,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         } else {
           // Regular pricing
           if (min === max) {
-            priceDisplay = `<div class="ai-search-product-price">$${min.toFixed(2)}</div>`;
-          } else {
-            priceDisplay = `<div class="ai-search-product-price">$${min.toFixed(2)} - $${max.toFixed(2)}</div>`;
-          }
+            priceDisplay = `<div class="ai-search-product-price">${storeCurrency.symbol}${min.toFixed(2)}</div>`;
+                      } else {
+              priceDisplay = `<div class="ai-search-product-price">${storeCurrency.symbol}${min.toFixed(2)} - ${storeCurrency.symbol}${max.toFixed(2)}</div>`;
+            }
         }
       } else if (product.price_min) {
         // Fallback to basic pricing
-        priceDisplay = `<div class="ai-search-product-price">$${product.price_min.toFixed(2)}</div>`;
+        priceDisplay = `<div class="ai-search-product-price">${storeCurrency.symbol}${product.price_min.toFixed(2)}</div>`;
       }
       
       // Generate star rating (placeholder for now - 4.5 stars as example)
@@ -359,13 +276,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             ${availabilityBadge}
             <div class="ai-search-product-actions">
               ${product.available ? `
-                <button class="ai-search-add-to-cart-btn" onclick="addToCart('${product.id}', '${escapeHtml(product.title || '')}')">
+                <button class="ai-search-add-to-cart-btn" data-product-id="${product.id}" data-product-title="${escapeHtml(product.title || '')}">
                   <svg class="ai-search-btn-icon" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M19,7H16V6A4,4 0 0,0 12,2A4,4 0 0,0 8,6V7H5A1,1 0 0,0 4,8V19A3,3 0 0,0 7,22H17A3,3 0 0,0 20,19V8A1,1 0 0,0 19,7M10,6A2,2 0 0,1 12,4A2,2 0 0,1 14,6V7H10V6M18,19A1,1 0 0,1 17,20H7A1,1 0 0,1 6,19V9H8V10A1,1 0 0,0 10,10A1,1 0 0,0 10,8V9H14V10A1,1 0 0,0 16,10A1,1 0 0,0 16,8V9H18V19Z"/>
                   </svg>
                   Add to Cart
                 </button>
-                <button class="ai-search-quick-view-btn ai-search-quick-view-icon-only" onclick="quickView('${product.id}', '${product.shopify_product_id}', '${escapeHtml(product.title || '')}')" aria-label="Quick view ${escapeHtml(product.title || '')}" title="Quick View">
+                <button class="ai-search-quick-view-btn ai-search-quick-view-icon-only" data-product-id="${product.id}" aria-label="Quick view ${escapeHtml(product.title || '')}" title="Quick View">
                   <svg class="ai-search-btn-icon" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7Z"/>
                   </svg>
@@ -462,9 +379,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         <div class="ai-search-examples">
           <h4>Try searching for:</h4>
           <div class="ai-search-example-tags">
-            <button onclick="document.querySelector('.ai-search-page-input').value='shirts'; document.querySelector('.ai-search-form').submit();" class="ai-search-example-tag">Shirts</button>
-            <button onclick="document.querySelector('.ai-search-page-input').value='accessories'; document.querySelector('.ai-search-form').submit();" class="ai-search-example-tag">Accessories</button>
-            <button onclick="document.querySelector('.ai-search-page-input').value='gifts'; document.querySelector('.ai-search-form').submit();" class="ai-search-example-tag">Gifts</button>
+                          <a href="${buildFilterUrl({ q: 'shirts' })}" class="ai-search-example-tag">Shirts</a>
+              <a href="${buildFilterUrl({ q: 'accessories' })}" class="ai-search-example-tag">Accessories</a>
+              <a href="${buildFilterUrl({ q: 'gifts' })}" class="ai-search-example-tag">Gifts</a>
           </div>
         </div>
       </div>
@@ -487,43 +404,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     `;
   }
 
-  // Mobile filter button
-  const mobileFilterButton = query && Object.keys(facets).length > 0 ? `
-    <button id="open-filters" class="ai-search-filter-btn">
-      <span>Filters</span>
-      ${Object.keys(filters).length > 0 ? `<span class="ai-search-filter-count">${Object.keys(filters).length}</span>` : ''}
-    </button>
-  ` : '';
+  // Mobile filter button removed to prevent navigation issues
+  const mobileFilterButton = '';
 
-  // Applied filters display
-  let appliedFilters = '';
-  if (Object.keys(filters).length > 0) {
-    const filterTags = Object.entries(filters).map(([key, value]) => {
-      let label = '';
-      if (key === 'vendor') label = `Brand: ${value}`;
-      else if (key === 'product_type') label = `Type: ${value}`;
-      else if (key === 'availability') label = value === true ? 'In Stock' : 'Out of Stock';
-      else if (key === 'price_min') label = `Min: $${value}`;
-      else if (key === 'price_max') label = `Max: $${value}`;
-      
-      return `
-        <span class="ai-search-applied-filter">
-          ${escapeHtml(label)}
-          <button onclick="window.location.href='${buildFilterUrl({ [key]: null })}'" class="ai-search-remove-filter">×</button>
-        </span>
-      `;
-    }).join('');
-    
-    appliedFilters = `
-      <div class="ai-search-applied-filters">
-        <h4>Applied Filters:</h4>
-        <div class="ai-search-filter-tags">
-          ${filterTags}
-          <button onclick="window.location.href='${buildFilterUrl(Object.keys(filters).reduce((acc, key) => ({ ...acc, [key]: null }), {}))}'" class="ai-search-clear-filters">Clear All</button>
-        </div>
-      </div>
-    `;
-  }
+  // Applied filters display removed to prevent navigation issues
+  const appliedFilters = '';
 
   // Create the complete Liquid template that will render within the store's theme
   const liquidTemplate = `
@@ -532,7 +417,51 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     <div class="ai-search-page">
       <div class="ai-search-page-container">
         
-
+        <!-- AI Chat Widget -->
+        ${query && products.length > 0 ? `
+          <div id="ai-chat-widget" class="ai-chat-widget">
+            <button id="ai-chat-toggle" class="ai-chat-toggle" title="Ask AI to refine your search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span class="ai-chat-toggle-text">Ask AI</span>
+            </button>
+            
+            <div id="ai-chat-popup" class="ai-chat-popup hidden">
+              <div class="ai-chat-header">
+                <div class="ai-chat-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="m9 12 2 2 4-4"></path>
+                  </svg>
+                  Refine Search
+                </div>
+                <button id="ai-chat-close" class="ai-chat-close" type="button">×</button>
+              </div>
+              
+              <div id="ai-chat-messages" class="ai-chat-messages">
+                <div class="ai-chat-message assistant">
+                  <div class="ai-chat-content">
+                    Found ${products.length} products for "${escapeHtml(query)}". How can I help refine your search?
+                  </div>
+                </div>
+              </div>
+              
+              <form id="ai-chat-form" class="ai-chat-form">
+                <div class="ai-chat-input-wrapper">
+                  <input type="text" id="ai-chat-input" class="ai-chat-input" placeholder="e.g., under $50, blue color, Nike brand..." />
+                  <button type="submit" class="ai-chat-send" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ` : ''}
 
         <!-- Results Summary -->
         ${resultsSummary}
@@ -571,20 +500,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         ${seoSection}
       </div>
       
-      <!-- Mobile Filter Overlay -->
-      ${query && Object.keys(facets).length > 0 ? `
-        <div id="filter-overlay" class="ai-search-filter-overlay">
-          <div class="ai-search-filter-modal">
-            <div class="ai-search-filter-header">
-              <h3>Filters</h3>
-              <button id="close-filters" class="ai-search-close-filters">×</button>
-            </div>
-            <div class="ai-search-filter-content">
-              ${filtersSidebar.replace('<aside class="ai-search-filters">', '<div class="ai-search-filters-mobile">').replace('</aside>', '</div>')}
-            </div>
-          </div>
-        </div>
-      ` : ''}
+      <!-- Mobile Filter Overlay removed to prevent navigation issues -->
 
       <!-- Quick View Modal -->
       <div id="quick-view-overlay" class="ai-search-quick-view-overlay">
@@ -733,230 +649,263 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         window.location.href = currentUrl.toString();
       }
       
-      // Real Shopify Cart Integration
-      function addToCart(productId, productTitle) {
-        const button = event.target;
-        const originalText = button.innerHTML;
-        
-        // Show loading state
-        button.innerHTML = 'Adding...';
-        button.disabled = true;
-        
-        // Get the first available variant ID for this product (using our internal product ID)
-        fetch('/apps/xpertsearch/api/product-variants?product_id=' + productId)
-          .then(response => response.json())
-          .then(data => {
-            if (data.variants && data.variants.length > 0) {
-              const defaultVariant = data.variants.find(v => v.available) || data.variants[0];
-              
-              // Add to Shopify cart using AJAX API
-              return fetch('/cart/add.js', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                  id: defaultVariant.id,
-                  quantity: 1
-                })
-              });
-            } else {
-              throw new Error('No variants available');
-            }
-          })
-          .then(response => {
-            if (response.ok) {
-              return response.json();
-            } else {
-              throw new Error('Failed to add to cart');
-            }
-          })
-          .then(cartItem => {
-            // Success - update UI
-            button.innerHTML = 'Added!';
-            button.style.background = '#28a745';
-            
-            // Update cart count in header if it exists
-            updateCartCount();
-            
-            // Show success notification
-            showCartNotification(productTitle + ' added to cart!');
-            
-            // Reset button after 2 seconds
+      // The SearchPageManager from search-page.js will handle all add-to-cart and quick-view functionality
+      // No need for duplicate inline JavaScript
+      
+      // Debug: Check if SearchPageManager is loaded
+      if (typeof SearchPageManager !== 'undefined') {
+        console.log('✅ SearchPageManager is loaded and available');
+      } else {
+        console.log('⚠️ SearchPageManager not found - check if search-page.js is loading correctly');
+      }
+      
+      // Debug: Add click listener to check if quick view buttons are being clicked
+      document.addEventListener('click', function(e) {
+        if (e.target.closest('.ai-search-quick-view-btn')) {
+          console.log('🔍 Quick View button clicked!', e.target.closest('.ai-search-quick-view-btn'));
+        }
+      });
+      
+      // AI Chat Widget Functionality
+      var aiChatWidget = document.getElementById('ai-chat-widget');
+      var aiChatToggle = document.getElementById('ai-chat-toggle');
+      var aiChatPopup = document.getElementById('ai-chat-popup');
+      var aiChatClose = document.getElementById('ai-chat-close');
+      var aiChatForm = document.getElementById('ai-chat-form');
+      var aiChatInput = document.getElementById('ai-chat-input');
+      var aiChatMessages = document.getElementById('ai-chat-messages');
+      var aiChatSend = document.querySelector('.ai-chat-send');
+      var isChatLoading = false;
+      
+      // Context for conversational search
+      var conversationContext = {
+        queries: ['${escapeHtml(query)}'],
+        filters: ${JSON.stringify(filters)},
+        viewedProducts: [],
+        preferences: {},
+        sessionId: '${Date.now()}'
+      };
+      
+      if (aiChatToggle) {
+        aiChatToggle.addEventListener('click', function() {
+          if (aiChatPopup) {
+            aiChatPopup.classList.remove('hidden');
             setTimeout(function() {
-              button.innerHTML = originalText;
-              button.disabled = false;
-              button.style.background = '';
-            }, 2000);
-            
-            // Track analytics
-            if (typeof gtag !== 'undefined') {
-              gtag('event', 'add_to_cart', {
-                'currency': 'USD',
-                'value': cartItem.price / 100,
-                'items': [{
-                  'item_id': cartItem.variant_id || productId,
-                  'item_name': productTitle,
-                  'quantity': 1,
-                  'price': cartItem.price / 100
-                }]
-              });
-            }
+              if (aiChatInput) {
+                aiChatInput.focus();
+              }
+            }, 100);
+          }
+        });
+      }
+      
+      if (aiChatClose) {
+        aiChatClose.addEventListener('click', function() {
+          if (aiChatPopup) {
+            aiChatPopup.classList.add('hidden');
+          }
+        });
+      }
+      
+      if (aiChatInput) {
+        aiChatInput.addEventListener('input', function() {
+          var hasValue = this.value.trim().length > 0;
+          if (aiChatSend) {
+            aiChatSend.disabled = !hasValue || isChatLoading;
+          }
+        });
+      }
+      
+      if (aiChatForm) {
+        aiChatForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          
+          var message = aiChatInput.value.trim();
+          if (!message || isChatLoading) return;
+          
+          sendChatMessage(message);
+        });
+      }
+      
+      // Close chat when clicking outside
+      document.addEventListener('click', function(e) {
+        if (aiChatPopup && !aiChatWidget.contains(e.target) && !aiChatPopup.classList.contains('hidden')) {
+          aiChatPopup.classList.add('hidden');
+        }
+      });
+      
+      function sendChatMessage(message) {
+        if (isChatLoading) return;
+        
+        // Add user message to chat
+        addMessageToChat('user', message);
+        
+        // Clear input and disable submit
+        aiChatInput.value = '';
+        aiChatSend.disabled = true;
+        isChatLoading = true;
+        
+        // Add loading message
+        var loadingId = addMessageToChat('assistant', '', true);
+        
+        // Send to conversation API
+        fetch('/apps/xpertsearch/api/conversation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: getConversationMessages().concat([{
+              role: 'user',
+              content: message,
+              timestamp: Date.now()
+            }]),
+            shop_domain: '${escapeHtml(shopDomain)}',
+            context: conversationContext
           })
-          .catch(error => {
-            console.error('Add to cart failed:', error);
+        })
+        .then(function(response) {
+          return response.json();
+        })
+        .then(function(data) {
+          // Remove loading message
+          removeMessage(loadingId);
+          
+          if (data.success && data.data) {
+            // Add assistant response
+            addMessageToChat('assistant', data.data.message);
             
-            // Error state
-            button.innerHTML = 'Error';
-            button.style.background = '#dc3545';
-            
-            // Show error notification
-            showCartNotification('Failed to add to cart. Please try again.', 'error');
-            
-            // Reset button after 2 seconds
-            setTimeout(function() {
-              button.innerHTML = originalText;
-              button.disabled = false;
-              button.style.background = '';
-            }, 2000);
-          });
-      }
-      
-      // Update cart count in header
-      function updateCartCount() {
-        fetch('/cart.js')
-          .then(response => response.json())
-          .then(cart => {
-            const cartCountElements = document.querySelectorAll('.cart-count, [data-cart-count]');
-            cartCountElements.forEach(element => {
-              element.textContent = cart.item_count;
-            });
-          })
-          .catch(error => console.error('Failed to update cart count:', error));
-      }
-      
-      // Show cart notification
-      function showCartNotification(message, type = 'success') {
-        // Remove existing notifications
-        const existingNotifications = document.querySelectorAll('.ai-search-cart-notification');
-        existingNotifications.forEach(notification => notification.remove());
-        
-        // Create notification
-        const notification = document.createElement('div');
-        notification.className = 'ai-search-cart-notification ai-search-cart-notification-' + type;
-        notification.textContent = message;
-        
-        // Add to page
-        document.body.appendChild(notification);
-        
-        // Show with animation
-        setTimeout(() => notification.classList.add('show'), 100);
-        
-        // Hide after 3 seconds
-        setTimeout(() => {
-          notification.classList.remove('show');
-          setTimeout(() => notification.remove(), 300);
-        }, 3000);
-      }
-      
-      // Quick View functionality with modal
-      function quickView(productId, shopifyProductId, productTitle) {
-        const overlay = document.getElementById('quick-view-overlay');
-        const content = document.querySelector('.ai-search-quick-view-content');
-        
-        // Show modal with loading state
-        overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
-        
-        // Reset content to loading state
-        content.innerHTML = \`
-          <div class="ai-search-quick-view-loading">
-            <div class="ai-search-spinner"></div>
-            <p>Loading product details...</p>
-          </div>
-        \`;
-        
-        // Fetch product details
-        fetch('/apps/xpertsearch/api/product-details?product_id=' + productId)
-          .then(response => response.json())
-          .then(product => {
-            if (product.error) {
-              throw new Error(product.error);
+            // Update context
+            if (data.data.context) {
+              conversationContext = data.data.context;
             }
             
-            // Render product details in modal
-            content.innerHTML = \`
-              <div class="ai-search-quick-view-product">
-                <div class="ai-search-quick-view-images">
-                  \${product.image_url ? \`
-                    <img src="\${product.image_url}" alt="\${product.title}" class="ai-search-quick-view-main-image" />
-                  \` : \`
-                    <div class="ai-search-quick-view-placeholder">
-                      <svg viewBox="0 0 24 24" class="ai-search-placeholder-icon">
-                        <path fill="currentColor" d="M21,19V5C21,3.89 20.1,3 19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19M19,19H5V5H19V19M13.96,12.29L11.21,15.83L9.25,13.47L6.5,17H17.5L13.96,12.29Z" />
-                      </svg>
-                      <span>No Image</span>
-                    </div>
-                  \`}
-                </div>
-                <div class="ai-search-quick-view-details">
-                  <h2>\${product.title}</h2>
-                  \${product.vendor ? \`<p class="ai-search-quick-view-vendor">\${product.vendor}</p>\` : ''}
-                  
-                  <div class="ai-search-quick-view-price">
-                    \${product.on_sale ? \`
-                      <span class="ai-search-sale-price">$\${product.price_range.min.toFixed(2)}</span>
-                      <span class="ai-search-original-price">$\${product.price_range.sale_min.toFixed(2)}</span>
-                    \` : \`
-                      <span class="ai-search-current-price">$\${product.price_range ? product.price_range.min.toFixed(2) : product.price_min.toFixed(2)}</span>
-                    \`}
-                  </div>
-                  
-                  \${product.description ? \`
-                    <div class="ai-search-quick-view-description">
-                      <p>\${product.description.substring(0, 200)}\${product.description.length > 200 ? '...' : ''}</p>
-                    </div>
-                  \` : ''}
-                  
-                  <div class="ai-search-quick-view-actions">
-                    \${product.available ? \`
-                      <button class="ai-search-quick-view-add-cart" onclick="addToCart('\${productId}', '\${product.title}')">
-                        <svg class="ai-search-btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M19,7H16V6A4,4 0 0,0 12,2A4,4 0 0,0 8,6V7H5A1,1 0 0,0 4,8V19A3,3 0 0,0 7,22H17A3,3 0 0,0 20,19V8A1,1 0 0,0 19,7M10,6A2,2 0 0,1 12,4A2,2 0 0,1 14,6V7H10V6M18,19A1,1 0 0,1 17,20H7A1,1 0 0,1 6,19V9H8V10A1,1 0 0,0 10,10A1,1 0 0,0 10,8V9H14V10A1,1 0 0,0 16,10A1,1 0 0,0 16,8V9H18V19Z"/>
-                        </svg>
-                        Add to Cart
-                      </button>
-                      <a href="/products/\${product.handle}" class="ai-search-quick-view-full-details">View Full Details</a>
-                    \` : \`
-                      <p class="ai-search-quick-view-unavailable">Out of Stock</p>
-                      <a href="/products/\${product.handle}" class="ai-search-quick-view-full-details">View Product</a>
-                    \`}
-                  </div>
-                </div>
-              </div>
-            \`;
-          })
-          .catch(error => {
-            console.error('Quick view failed:', error);
-            content.innerHTML = \`
-              <div class="ai-search-quick-view-error">
-                <p>Sorry, we couldn't load the product details.</p>
-                <button onclick="quickView('\${productId}', '\${shopifyProductId}', '\${productTitle}')" class="ai-search-retry-btn">Try Again</button>
-              </div>
-            \`;
-          });
+            // If new products were found, update the page
+            if (data.data.products && data.data.products.length > 0) {
+              setTimeout(function() {
+                // Build new search URL with conversation results
+                var newUrl = new URL(window.location);
+                if (data.data.search_query) {
+                  newUrl.searchParams.set('q', data.data.search_query);
+                }
+                // Apply any new filters from conversation
+                if (data.data.filters) {
+                  Object.keys(data.data.filters).forEach(function(key) {
+                    if (data.data.filters[key] !== null && data.data.filters[key] !== undefined) {
+                      newUrl.searchParams.set(key, data.data.filters[key]);
+                    }
+                  });
+                }
+                
+                // Redirect to updated search
+                window.location.href = newUrl.toString();
+              }, 1500);
+            }
+          } else {
+            addMessageToChat('assistant', "I'm sorry, I encountered an issue processing your request. Please try again.");
+          }
+        })
+        .catch(function(error) {
+          console.error('Conversation API error:', error);
+          removeMessage(loadingId);
+          addMessageToChat('assistant', "I'm sorry, I encountered an issue processing your request. Please try again.");
+        })
+        .finally(function() {
+          isChatLoading = false;
+        });
+      }
+      
+      function addMessageToChat(role, content, isLoading) {
+        var messageId = 'msg-' + Date.now() + Math.random();
+        var messageClass = 'ai-chat-message ' + role;
         
-        // Track analytics
-        if (typeof gtag !== 'undefined') {
-          gtag('event', 'view_item', {
-            'item_id': shopifyProductId,
-            'item_name': productTitle,
-            'content_type': 'product'
-          });
+        var messageElement = document.createElement('div');
+        messageElement.className = messageClass;
+        messageElement.id = messageId;
+        
+        if (isLoading) {
+          messageElement.innerHTML = 
+            '<div class="ai-chat-content">' +
+              '<div class="ai-chat-loading">' +
+                '<span></span><span></span><span></span>' +
+              '</div>' +
+            '</div>';
+        } else {
+          messageElement.innerHTML = 
+            '<div class="ai-chat-content">' + escapeHtml(content) + '</div>';
+        }
+        
+        aiChatMessages.appendChild(messageElement);
+        
+        // Scroll to bottom
+        aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+        
+        return messageId;
+      }
+      
+      function removeMessage(messageId) {
+        var element = document.getElementById(messageId);
+        if (element) {
+          element.remove();
         }
       }
+      
+      function getConversationMessages() {
+        var messages = [];
+        var messageElements = aiChatMessages.querySelectorAll('.ai-chat-message');
+        
+        messageElements.forEach(function(element) {
+          var role = element.classList.contains('user') ? 'user' : 'assistant';
+          var content = element.querySelector('.ai-chat-content').textContent;
+          
+          if (content && !element.querySelector('.ai-chat-loading')) {
+            messages.push({
+              role: role,
+              content: content,
+              timestamp: Date.now()
+            });
+          }
+        });
+        
+        return messages;
+      }
+      
+      function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
     </script>
+    
+    <!-- Clear browser cache for old search assets -->
+    <script>
+      // Clear any cached search page assets from previous versions
+      if ('caches' in window) {
+        caches.keys().then(function(cacheNames) {
+          cacheNames.forEach(function(cacheName) {
+            if (cacheName.includes('ai-search-v1') || cacheName.includes('search-page')) {
+              console.log('Clearing old search cache:', cacheName);
+              caches.delete(cacheName);
+            }
+          });
+        });
+      }
+      
+      // Force reload of stylesheets if they seem to be cached versions
+      const links = document.querySelectorAll('link[rel="stylesheet"]');
+      links.forEach(function(link) {
+        if (link.href.includes('search-page.css')) {
+          const href = link.href;
+          link.href = '';
+          link.href = href;
+        }
+      });
+    </script>
+    
+    <!-- Load search page JavaScript for proper button functionality -->
+    <script src="${jsUrl}"></script>
+  </body>
+</html>
   `;
 
   // Return as Liquid content so it renders within the store's theme
@@ -964,7 +913,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     status: 200,
     headers: {
       "Content-Type": "application/liquid",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 }; 

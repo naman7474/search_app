@@ -9,6 +9,20 @@ import {
   reindexAllProducts,
   type ShopifyProduct 
 } from "../lib/indexing/product-indexer.server";
+import { ShopifyGraphQLFetcher } from "../lib/shopify/shopify-graphql-fetcher.server";
+import { startSyncProgress, updateSyncProgress, finishSyncProgress } from "../lib/utils/sync-progress.server";
+
+// In-memory job tracking (in production, use Redis or database)
+const syncJobs = new Map<string, {
+  id: string;
+  shopDomain: string;
+  status: 'starting' | 'running' | 'completed' | 'failed';
+  processed: number;
+  total: number;
+  error?: string;
+  current_step?: string;
+  created_at: Date;
+}>();
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -34,131 +48,69 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }, { status: 500 });
     }
   }
-  
+
   if (action === "sync") {
     try {
-      // Fetch products from Shopify
-      const productsQuery = `
-        query getProducts($first: Int!, $after: String) {
-          products(first: $first, after: $after) {
-            edges {
-              node {
-                id
-                title
-                descriptionHtml
-                handle
-                productType
-                vendor
-                tags
-                status
-                variants(first: 100) {
-                  edges {
-                    node {
-                      id
-                      title
-                      price
-                      compareAtPrice
-                      sku
-                      barcode
-                      inventoryQuantity
-                      availableForSale
-                      image {
-                        id
-                      }
-                    }
-                  }
-                }
-                images(first: 10) {
-                  edges {
-                    node {
-                      id
-                      url
-                      altText
-                    }
-                  }
-                }
-                options {
-                  name
-                  values
-                }
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
+      console.log(`🚀 Starting GraphQL product sync for ${shopDomain}`);
+      console.log(`📊 Debug Info: admin object type: ${typeof admin}, shop: ${shopDomain}`);
+      
+      // Test authentication first
+      try {
+        console.log(`🔒 Testing authentication with simple shop query...`);
+        const testQuery = `
+          query {
+            shop {
+              id
+              name
+              myshopifyDomain
             }
           }
-        }
-      `;
-      
-      let allProducts: ShopifyProduct[] = [];
-      let hasNextPage = true;
-      let after: string | null = null;
-      
-      console.log(`SYNC_STARTED: Starting sync for ${shopDomain}`);
-      
-      // Fetch all products (paginated)
-      while (hasNextPage) {
-        const response: Response = await admin.graphql(productsQuery, {
-          variables: {
-            first: 50,
-            after,
-          },
-        });
+        `;
         
-        const responseJson: any = await response.json();
+        const testResponse = await admin.graphql(testQuery);
+        const testData = await testResponse.json() as { data?: any; errors?: any[] };
         
-        if (responseJson.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(responseJson.errors)}`);
+        if (testData.errors) {
+          throw new Error(`Authentication test failed: ${JSON.stringify(testData.errors)}`);
         }
         
-        const products = responseJson.data?.products?.edges || [];
+        console.log(`✅ Authentication test passed for shop: ${testData.data.shop.name}`);
         
-        // Transform GraphQL response to our ShopifyProduct format
-        const transformedProducts = products.map((edge: any) => {
-          const product = edge.node;
-          return {
-            id: parseInt(product.id.replace('gid://shopify/Product/', '')),
-            title: product.title,
-            body_html: product.descriptionHtml,
-            handle: product.handle,
-            product_type: product.productType,
-            vendor: product.vendor,
-            tags: product.tags.join(','),
-            status: product.status.toLowerCase(),
-            variants: product.variants.edges.map((vEdge: any) => ({
-              id: parseInt(vEdge.node.id.replace('gid://shopify/ProductVariant/', '')),
-              title: vEdge.node.title,
-              price: vEdge.node.price,
-              compare_at_price: vEdge.node.compareAtPrice,
-              sku: vEdge.node.sku,
-              barcode: vEdge.node.barcode,
-              inventory_quantity: vEdge.node.inventoryQuantity || 0,
-              available: vEdge.node.availableForSale,
-              image_id: vEdge.node.image?.id ? parseInt(vEdge.node.image.id.replace('gid://shopify/ProductImage/', '')) : undefined,
-            })),
-            images: product.images.edges.map((iEdge: any) => ({
-              id: parseInt(iEdge.node.id.replace('gid://shopify/ProductImage/', '')),
-              src: iEdge.node.url,
-              alt: iEdge.node.altText,
-            })),
-            options: product.options,
-          };
-        });
-        
-        allProducts = [...allProducts, ...transformedProducts];
-        
-        const pageInfo: any = responseJson.data?.products?.pageInfo;
-        hasNextPage = pageInfo?.hasNextPage || false;
-        after = pageInfo?.endCursor || null;
+      } catch (authError) {
+        console.error(`❌ Authentication test failed:`, authError);
+        throw new Error(`Authentication failed: ${authError instanceof Error ? authError.message : String(authError)}`);
       }
       
-      console.log(`SYNC_FETCH_COMPLETE: Found ${allProducts.length} products for ${shopDomain}`);
+      // Add timeout for the entire sync operation (15 minutes)
+      const syncPromise = async () => {
+        // Start progress tracking
+        updateSyncProgress(shopDomain, { currentStep: 'initializing' });
+        
+        // Use the new GraphQL fetcher
+        const fetcher = new ShopifyGraphQLFetcher(admin, shopDomain);
+        updateSyncProgress(shopDomain, { currentStep: 'fetching products via GraphQL' });
+        
+        console.log(`🔄 Using GraphQL Admin API for product sync`);
+        const allProducts = await fetcher.fetchAllProducts();
+        console.log(`SYNC_FETCH_COMPLETE: Found ${allProducts.length} products for ${shopDomain}`);
+        
+        // Initialize progress tracking
+        startSyncProgress(shopDomain, allProducts.length);
+        updateSyncProgress(shopDomain, { currentStep: 'indexing products' });
+        
+        // Index all products
+        const result = await bulkIndexProducts(allProducts, shopDomain);
+        
+        console.log(`SYNC_BULK_INDEX_COMPLETE: Synced ${shopDomain}`);
+        finishSyncProgress(shopDomain);
+        return result;
+      };
       
-      // Index all products
-      const result = await bulkIndexProducts(allProducts, shopDomain);
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Sync operation timeout after 15 minutes')), 15 * 60 * 1000)
+      );
       
-      console.log(`SYNC_BULK_INDEX_COMPLETE: Synced ${shopDomain}`);
+      const result = await Promise.race([syncPromise(), timeoutPromise]);
 
       return json({
         success: true,
@@ -167,11 +119,36 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       
     } catch (error) {
       console.error("PRODUCT_SYNC_FAILED:", error);
+      
+      // Provide more helpful error messages for GraphQL errors
+      let errorMessage = "Product sync failed";
+      let statusCode = 500;
+      
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorMessage = "Sync operation timed out. Try syncing in smaller batches.";
+          statusCode = 408; // Request Timeout
+        } else if (error.message.includes('THROTTLED') || error.message.includes('rate limit') || error.message.includes('429')) {
+          errorMessage = "API rate limit exceeded. Please wait and try again.";
+          statusCode = 429; // Too Many Requests
+        } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('connection')) {
+          errorMessage = "Network error during sync. Please check your connection and try again.";
+          statusCode = 503; // Service Unavailable
+        } else if (error.message.includes('GraphQL errors')) {
+          errorMessage = "GraphQL API error. Please check your app permissions.";
+          statusCode = 400; // Bad Request
+        } else if (error.message.includes('ACCESS_DENIED') || error.message.includes('INVALID_CREDENTIALS')) {
+          errorMessage = "Authentication error. Please reinstall the app.";
+          statusCode = 401; // Unauthorized
+        }
+      }
+      
       return json({
         success: false,
-        error: "Product sync failed",
+        error: errorMessage,
         message: error instanceof Error ? error.message : "Unknown error",
-      }, { status: 500 });
+        details: "Check server logs for more information",
+      }, { status: statusCode });
     }
   }
   
@@ -188,9 +165,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method === "POST") {
     try {
       const body = await request.json();
-      const { action, product_id, product_data } = body;
+      const { action } = body;
+      
+      if (action === "start_sync") {
+        // Generate a unique job ID
+        const jobId = `sync_${shopDomain}_${Date.now()}`;
+        
+        // Create job record
+        syncJobs.set(jobId, {
+          id: jobId,
+          shopDomain,
+          status: 'starting',
+          processed: 0,
+          total: 0,
+          current_step: 'Initializing sync...',
+          created_at: new Date(),
+        });
+        
+        // Start background sync process
+        startBackgroundSync(jobId, admin, shopDomain);
+        
+        return json({
+          success: true,
+          job_id: jobId,
+          message: "Sync job started successfully",
+        });
+      }
       
       if (action === "index_product") {
+        const { product_data } = body;
         if (!product_data) {
           return json({ error: "Missing product_data" }, { status: 400 });
         }
@@ -203,6 +206,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
       
       if (action === "remove_product") {
+        const { product_id } = body;
         if (!product_id) {
           return json({ error: "Missing product_id" }, { status: 400 });
         }
@@ -235,4 +239,70 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
   
   return json({ error: "Method not allowed" }, { status: 405 });
-}; 
+};
+
+// Background sync function
+async function startBackgroundSync(jobId: string, admin: any, shopDomain: string) {
+  const job = syncJobs.get(jobId);
+  if (!job) return;
+  
+  try {
+    // Update job status
+    job.status = 'running';
+    job.current_step = 'Testing authentication...';
+    
+    // Test authentication
+    const testQuery = `
+      query {
+        shop {
+          id
+          name
+          myshopifyDomain
+        }
+      }
+    `;
+    
+    const testResponse = await admin.graphql(testQuery);
+    const testData = await testResponse.json() as { data?: any; errors?: any[] };
+    
+    if (testData.errors) {
+      throw new Error(`Authentication test failed: ${JSON.stringify(testData.errors)}`);
+    }
+    
+    console.log(`✅ Authentication test passed for shop: ${testData.data.shop.name}`);
+    
+    // Fetch products
+    job.current_step = 'Fetching products from Shopify...';
+    const fetcher = new ShopifyGraphQLFetcher(admin, shopDomain);
+    const allProducts = await fetcher.fetchAllProducts();
+    
+    job.total = allProducts.length;
+    job.current_step = 'Indexing products...';
+    
+    console.log(`🔄 Starting to index ${allProducts.length} products for ${shopDomain}`);
+    
+    // Index products with progress tracking
+    const result = await bulkIndexProducts(allProducts, shopDomain);
+    
+    // Update job completion
+    job.status = 'completed';
+    job.processed = result.products_processed;
+    job.current_step = 'Sync completed successfully';
+    
+    console.log(`✅ Background sync completed for ${shopDomain}: ${result.products_processed} products processed`);
+    
+  } catch (error) {
+    console.error(`❌ Background sync failed for ${shopDomain}:`, error);
+    
+    if (job) {
+      job.status = 'failed';
+      job.error = error instanceof Error ? error.message : 'Unknown error';
+      job.current_step = 'Sync failed';
+    }
+  }
+}
+
+// Helper function to get job status (used by sync-progress endpoint)
+export function getSyncJobStatus(jobId: string) {
+  return syncJobs.get(jobId);
+} 
