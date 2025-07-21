@@ -6,6 +6,11 @@
 class SearchPageManager {
   constructor() {
     console.log('SearchPageManager: Constructor called');
+    if (window.searchPageManagerInitialized) {
+      console.log('SearchPageManager already initialized, skipping...');
+      return;
+    }
+    window.searchPageManagerInitialized = true;
     this.init();
   }
 
@@ -25,18 +30,28 @@ class SearchPageManager {
   bindEventListeners() {
     console.log('SearchPageManager: Binding event listeners');
     
-    // Add to cart buttons
-    document.addEventListener('click', (e) => {
+    // Remove existing listeners to prevent duplicates
+    if (this.boundClickHandler) {
+      document.removeEventListener('click', this.boundClickHandler);
+    }
+    
+    // Create bound handler to allow removal later
+    this.boundClickHandler = (e) => {
       if (e.target.closest('.ai-search-add-to-cart-btn')) {
         console.log('SearchPageManager: Add to cart button clicked');
         e.preventDefault();
+        e.stopImmediatePropagation(); // Prevent duplicate execution
         const button = e.target.closest('.ai-search-add-to-cart-btn');
+        if (button.disabled) return; // Prevent multiple clicks
         const productId = button.dataset.productId;
         const productTitle = button.dataset.productTitle;
         console.log('SearchPageManager: Product ID:', productId, 'Title:', productTitle);
         this.handleAddToCart(button, productId, productTitle);
       }
-    });
+    };
+    
+    // Add to cart buttons
+    document.addEventListener('click', this.boundClickHandler);
 
     // Quick view buttons
     document.addEventListener('click', (e) => {
@@ -467,18 +482,40 @@ class SearchPageManager {
       });
     }
 
+    // Get shop domain from current URL
+    const shopDomain = window.location.hostname;
+    
+    // Get session ID if available
+    const sessionId = this.getSessionId();
+    
     // Custom analytics endpoint
     fetch('/apps/xpertsearch/api/analytics', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event_type: 'add_to_cart',
+        shop_domain: shopDomain,
         product_id: productId,
         product_title: productTitle,
         variant_id: cartItem.variant_id,
         price: cartItem.price,
+        session_id: sessionId,
+        search_query_id: sessionId, // Use session as search query ID fallback
+        quantity: 1,
       })
     }).catch(error => console.error('Analytics tracking failed:', error));
+  }
+
+  /**
+   * Get or create a session ID for analytics tracking
+   */
+  getSessionId() {
+    let sessionId = sessionStorage.getItem('ai_search_session_id');
+    if (!sessionId) {
+      sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      sessionStorage.setItem('ai_search_session_id', sessionId);
+    }
+    return sessionId;
   }
 
   /**

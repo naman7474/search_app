@@ -34,6 +34,7 @@ export interface UnifiedSearchResult {
     filters_applied?: Record<string, any>;
     search_method: SearchStrategy;
     processing_time_ms: number;
+    total_pipeline_time_ms?: number;
   };
   ranking_info?: {
     model_used: string;
@@ -119,9 +120,21 @@ export class UnifiedSearchService {
           throw new Error(`Unknown search strategy: ${strategy}`);
       }
       
+      // Calculate total response time for the entire search pipeline
+      const totalResponseTime = Date.now() - startTime;
+      
+      // Update the result with accurate total response time
+      result.query_info = {
+        ...result.query_info,
+        processing_time_ms: totalResponseTime,
+        total_pipeline_time_ms: totalResponseTime,
+      };
+      
+      console.log(`✅ ${strategy} search completed in ${totalResponseTime}ms for "${request.query}" - found ${result.total_count} results`);
+      
       // Log analytics if enabled
       if (config.enable_analytics) {
-        await this.logSearchAnalytics(request, result);
+        await this.logSearchAnalytics(request, result, totalResponseTime);
       }
       
       return result;
@@ -506,7 +519,8 @@ export class UnifiedSearchService {
    */
   private async logSearchAnalytics(
     request: UnifiedSearchRequest,
-    result: UnifiedSearchResult
+    result: UnifiedSearchResult,
+    totalResponseTime?: number
   ): Promise<void> {
     try {
       await AnalyticsLogger.logSearch({
@@ -515,7 +529,7 @@ export class UnifiedSearchService {
         results_count: result.total_count,
         filters: request.filters,
         search_method: result.query_info.search_method,
-        response_time_ms: result.query_info.processing_time_ms,
+        response_time_ms: totalResponseTime || result.query_info.processing_time_ms,
         session_id: request.session_id,
         user_agent: request.user_agent,
       });

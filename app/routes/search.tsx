@@ -186,7 +186,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Generate product grid HTML
   let productGridHtml = '';
   if (products.length > 0) {
-    const productCardsHtml = products.map(product => {
+    const productCardsHtml = products.map((product, index) => {
       const imageUrl = product.image_url || '';
       const handle = product.handle || '';
       const productUrl = handle ? `/products/${handle}` : '#';
@@ -252,7 +252,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
       
       return `
-        <div class="ai-search-product-card" data-product-url="${productUrl}">
+        <div class="ai-search-product-card" data-product-url="${productUrl}" data-product-id="${product.id || product.shopify_product_id}" data-position="${index + 1}">
           <div class="ai-search-product-image-container">
             ${saleDisplay}
             ${imageUrl ? `
@@ -520,6 +520,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     </div>
 
     <script>
+      // Store search context for analytics
+      window.searchPageData = {
+        query: ${JSON.stringify(query)},
+        shopDomain: ${JSON.stringify(shopDomain)},
+        sessionId: sessionStorage.getItem('ai_search_session_id') || 'search_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      };
+      
+      // Store session ID for later use
+      if (!sessionStorage.getItem('ai_search_session_id')) {
+        sessionStorage.setItem('ai_search_session_id', window.searchPageData.sessionId);
+      }
+      
       // Enhanced search page functionality
       document.addEventListener('DOMContentLoaded', function() {
         // Auto-focus search input for better UX (only if no query present)
@@ -531,7 +543,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }, 100);
         }
         
-        // Add click handlers for product cards
+        // Add click handlers for product cards with analytics tracking
         document.querySelectorAll('.ai-search-product-card').forEach(function(card) {
           card.addEventListener('click', function(event) {
             // Don't navigate if clicking on buttons
@@ -539,6 +551,35 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               return;
             }
             
+            // Track click event for analytics
+            var productId = this.getAttribute('data-product-id');
+            var position = this.getAttribute('data-position');
+            var searchData = window.searchPageData || {};
+            
+            // Log click event
+            fetch('/apps/xpertsearch/api/analytics', {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                event_type: 'click',
+                shop_domain: searchData.shopDomain || window.location.hostname,
+                product_id: parseInt(productId),
+                position: parseInt(position) || 0,
+                search_query: searchData.query || '',
+                search_id: searchData.sessionId,
+                session_id: searchData.sessionId,
+                page_url: window.location.href,
+                referrer: document.referrer,
+                click_source: 'search_results_page'
+              })
+            }).catch(function(error) {
+              console.warn('Failed to track click event:', error);
+            });
+            
+            // Navigate to product page
             var productUrl = this.getAttribute('data-product-url');
             if (productUrl && productUrl !== '#') {
               window.location.href = productUrl;
@@ -900,6 +941,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           link.href = href;
         }
       });
+      
+      // SearchPageManager is automatically initialized by search-page.js
+      // No need to initialize it again to prevent duplicate event listeners
     </script>
     
     <!-- Load search page JavaScript for proper button functionality -->

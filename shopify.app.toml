@@ -3,7 +3,7 @@
 client_id = "cbc5c60c6c9b8a693712e9577ba369ad"
 name = "xpertapp"
 handle = "xpertapp"
-application_url = "https://listprice-scary-ld-mall.trycloudflare.com"
+application_url = "https://kingdom-techniques-kit-anticipated.trycloudflare.com"
 embedded = true
 
 [build]
@@ -39,13 +39,13 @@ scopes = "read_product_listings,read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://listprice-scary-ld-mall.trycloudflare.com/auth/callback",
-  "https://listprice-scary-ld-mall.trycloudflare.com/auth/shopify/callback",
-  "https://listprice-scary-ld-mall.trycloudflare.com/api/auth/callback"
+  "https://kingdom-techniques-kit-anticipated.trycloudflare.com/auth/callback",
+  "https://kingdom-techniques-kit-anticipated.trycloudflare.com/auth/shopify/callback",
+  "https://kingdom-techniques-kit-anticipated.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://listprice-scary-ld-mall.trycloudflare.com"
+url = "https://kingdom-techniques-kit-anticipated.trycloudflare.com"
 subpath = "xpertsearch"
 prefix = "apps"
 
